@@ -38,22 +38,34 @@
 
 ### ตั้ง named tunnel (URL คงที่) — ทำครั้งเดียว
 
-ต้องมีโดเมนที่ย้าย nameserver มาอยู่กับ Cloudflare แล้ว
+**ต้องมีโดเมนเป็นของตัวเองก่อน** และย้าย nameserver มาอยู่กับ Cloudflare แล้ว
+named tunnel ผูกชื่อโฮสต์บนโซนที่คุณคุม ไม่มีโดเมนก็ไม่มีชื่อให้ผูก — ส่วน
+`<UUID>.cfargotunnel.com` ใช้เป็นเป้าของ CNAME ภายในบัญชีเดียวกันเท่านั้น
+เปิดตรง ๆ จากเบราว์เซอร์ไม่ได้ ยังไม่มีโดเมนให้ใช้ quick tunnel ไปก่อน
+
+ขั้นที่ต้องทำเอง เพราะเปิดเบราว์เซอร์ให้ล็อกอินด้วยบัญชีคุณ
 
 ```bash
 cloudflared tunnel login
 ```
-เปิดเบราว์เซอร์ให้เลือกโดเมน แล้วเก็บ certificate ไว้ที่ `%USERPROFILE%\.cloudflared\cert.pem`
+เลือกโดเมนในเบราว์เซอร์ ได้ certificate มาไว้ที่ `%USERPROFILE%\.cloudflared\cert.pem`
+
+ที่เหลือใช้สคริปต์ทำให้จบในคำสั่งเดียว — สร้าง tunnel, ผูก DNS, เขียน
+`config.yml`, ตั้ง `CLIPQUEUE_BASE_URL` ใน `.env` ให้ตรงกัน
+
+```bash
+.\setup-tunnel.ps1 -Hostname clip.โดเมนคุณ.com
+```
+
+สคริปต์ข้ามขั้นที่ทำไปแล้วได้ รันซ้ำไม่พัง และจะบอกเองถ้ายังไม่ได้ล็อกอิน
+
+<details>
+<summary>อยากทำมือทีละขั้น</summary>
 
 ```bash
 cloudflared tunnel create clipqueue
-```
-ได้ tunnel ID กับไฟล์ credential `<ID>.json` ในโฟลเดอร์เดียวกัน
-
-```bash
 cloudflared tunnel route dns clipqueue clip.โดเมนคุณ.com
 ```
-สร้าง DNS record ให้อัตโนมัติ
 
 สร้างไฟล์ `%USERPROFILE%\.cloudflared\config.yml`
 
@@ -72,6 +84,7 @@ ingress:
 ```
 CLIPQUEUE_BASE_URL=https://clip.โดเมนคุณ.com
 ```
+</details>
 
 จากนั้นรัน
 
