@@ -44,6 +44,31 @@ def need(tool: str) -> str:
     return path
 
 
+def connect(target: str) -> None:
+    """ต่อ adb ผ่าน TCP — อีมูเลเตอร์อย่าง BlueStacks และมือถือแบบไร้สายใช้ทางนี้"""
+    if ":" not in target:
+        target += ":5555"
+    out = run([need("adb"), "connect", target], timeout=30).stdout.strip()
+    print(f"  adb connect {target} → {out}")
+
+
+def is_emulator(serial: str) -> bool:
+    """อีมูเลเตอร์ต่อผ่าน TCP และตั้ง ro.kernel.qemu หรือใช้ชื่อรุ่นของตัวเอง"""
+    if serial.startswith("emulator-"):
+        return True
+    adb = need("adb")
+    qemu = run([adb, "-s", serial, "shell", "getprop", "ro.kernel.qemu"]).stdout.strip()
+    if qemu == "1":
+        return True
+    fingerprint = " ".join([
+        run([adb, "-s", serial, "shell", "getprop", "ro.product.model"]).stdout,
+        run([adb, "-s", serial, "shell", "getprop", "ro.product.manufacturer"]).stdout,
+        run([adb, "-s", serial, "shell", "getprop", "ro.build.characteristics"]).stdout,
+    ]).lower()
+    return any(k in fingerprint for k in
+               ("bluestacks", "nox", "ldplayer", "memu", "mumu", "emulator", "sdk_gphone"))
+
+
 def devices() -> list[tuple[str, str]]:
     out = run([need("adb"), "devices"]).stdout.splitlines()[1:]
     found = []
@@ -66,10 +91,14 @@ def require_device() -> str:
                  "'อนุญาตการแก้จุดบกพร่อง USB' (ติ๊ก 'เสมอ' ด้วยจะได้ไม่ถามอีก)")
     sys.exit(
         "ไม่พบมือถือ Android\n"
+        "\nถ้าใช้มือถือจริง\n"
         "  1. เปิด ตั้งค่า > เกี่ยวกับโทรศัพท์ > กด 'หมายเลขบิลด์' 7 ครั้ง\n"
         "  2. ตั้งค่า > ตัวเลือกสำหรับนักพัฒนา > เปิด 'การแก้จุดบกพร่อง USB'\n"
         "  3. เสียบสาย USB แล้วเลือกโหมด 'ถ่ายโอนไฟล์'\n"
-        "  4. รันใหม่อีกครั้ง"
+        "\nถ้าใช้อีมูเลเตอร์ (BlueStacks ฯลฯ)\n"
+        "  เปิด ADB ในตั้งค่าของอีมูเลเตอร์ แล้วรัน\n"
+        "    python tools/to_phone.py --connect 127.0.0.1:5555\n"
+        "  (ดูเลขพอร์ตจริงในหน้าตั้งค่าของอีมูเลเตอร์)"
     )
 
 
@@ -127,9 +156,13 @@ def main(argv=None) -> int:
     ap.add_argument("--share", action="store_true", help="เปิดหน้าแชร์ของ Shopee ต่อเลย")
     ap.add_argument("--mirror", action="store_true", help="เปิด scrcpy ต่อเลย")
     ap.add_argument("--check", action="store_true", help="ตรวจความพร้อมอย่างเดียว")
+    ap.add_argument("--connect", metavar="HOST:PORT",
+                    help="ต่อ adb ผ่าน TCP ก่อน เช่น 127.0.0.1:5555 สำหรับอีมูเลเตอร์")
     args = ap.parse_args(argv)
 
     adb = need("adb")
+    if args.connect:
+        connect(args.connect)
 
     if args.check:
         print(f"adb    : {adb}")
@@ -140,7 +173,8 @@ def main(argv=None) -> int:
             serial = require_device()
             model = run([adb, "-s", serial, "shell", "getprop", "ro.product.model"]).stdout.strip()
             sdk = run([adb, "-s", serial, "shell", "getprop", "ro.build.version.sdk"]).stdout.strip()
-            print(f"รุ่น    : {model} · Android SDK {sdk}")
+            kind = "อีมูเลเตอร์" if is_emulator(serial) else "เครื่องจริง"
+            print(f"รุ่น    : {model} · Android SDK {sdk} · {kind}")
             print(f"Shopee : {shopee_package(serial) or 'ไม่พบแอป Shopee'}")
         return 0
 
@@ -203,7 +237,9 @@ def main(argv=None) -> int:
     print(job["caption"])
     print("─" * 56)
 
-    if args.mirror:
+    if args.mirror and is_emulator(serial):
+        print("\nข้าม scrcpy — อีมูเลเตอร์มีหน้าต่างของตัวเองอยู่แล้ว ใช้หน้าต่างนั้นได้เลย")
+    elif args.mirror:
         need("scrcpy")
         print("\nเปิด scrcpy — คุมมือถือด้วยเมาส์และคีย์บอร์ด ปิดหน้าต่างเพื่อออก")
         subprocess.run(["scrcpy", "-s", serial, "--window-title", f"ClipQueue · {handle}"])
