@@ -1159,6 +1159,7 @@ table.vids tbody tr:hover { background: var(--surface-2); }
      says so in the sidebar. */
   const SERVER = {
     live: false,
+    hosted: false,
     token: "",
     base: "/api",
 
@@ -1167,6 +1168,9 @@ table.vids tbody tr:hover { background: var(--surface-2); }
         const res = await fetch(`${this.base}/health`, { cache: "no-store" });
         if (!res.ok) return false;
         const health = await res.json();
+        // the API answered, so this page is being served by the server even if
+        // the token later turns out to be missing or wrong
+        this.hosted = true;
         this.token = this.readToken();
         const probe = await fetch(`${this.base}/state`, { headers: this.headers() });
         if (!probe.ok) return false;
@@ -1784,6 +1788,11 @@ table.vids tbody tr:hover { background: var(--surface-2); }
      voice.py times them when the Thai voice gives no word boundaries. */
   const timers = new WeakMap();
 
+  // Demo media paths are relative to the app folder. Opened as a file or as a
+  // published artifact that is the page's own folder; served by the API it is
+  // mounted at /app, so the same path has to be rewritten.
+  const demoAsset = (src) => (SERVER.hosted ? "/app/" + src.replace(/^\/+/, "") : src);
+
   function previewCues(lines, total) {
     const chars = lines.reduce((n, l) => n + l.length, 0) || 1;
     let clock = 0;
@@ -1799,7 +1808,12 @@ table.vids tbody tr:hover { background: var(--surface-2); }
     const { product, format, aspect, lines, seed } = opts;
     // A rendered voiceover belongs to one exact script. Re-rolling the hook
     // changes the words, so the audio no longer matches and the preview says so.
-    const voiced = seed === 0 ? PREVIEW_AUDIO[`${product.id}_${format.id}`] : null;
+    // The bundled demo media is for the sample catalogue only. In live mode a
+    // real product can share an id with a sample one, which would play the
+    // wrong clip — and the bundled paths do not resolve under the server's
+    // routes anyway. Live jobs carry their own rendered video instead.
+    const voiced = (!SERVER.live && seed === 0)
+      ? PREVIEW_AUDIO[`${product.id}_${format.id}`] : null;
     // A rendered mp4 already has the shots, badge and captions burned in, so
     // the frame shows the file itself instead of the CSS stand-in. `clip` can
     // come from the bundled demo set or from this server's own render.
@@ -1816,7 +1830,7 @@ table.vids tbody tr:hover { background: var(--surface-2); }
         <div class="pv-frame" style="aspect-ratio:${aspect.w} / ${aspect.h}">
           <span class="pv-mock">${clip ? "คลิปจริง" : "ตัวอย่างจำลอง"}</span>
           <span class="pv-ratio">${clip ? `${clip.w}×${clip.h}` : `${aspect.w}×${aspect.h}`}</span>
-          ${clip ? `<video class="pv-video" data-video preload="metadata" playsinline src="${clip.src}"></video>` : `
+          ${clip ? `<video class="pv-video" data-video preload="metadata" playsinline src="${opts.clip ? clip.src : demoAsset(clip.src)}"></video>` : `
           ${Array.from({ length: shots }, (_, i) => `
             <div class="pv-shot${i === 0 ? " on" : ""}" data-shot="${i}"
                  style="background:${tint(product.hue + i * 9, 44)}">
@@ -1835,7 +1849,7 @@ table.vids tbody tr:hover { background: var(--surface-2); }
                aria-label="ตำแหน่งในคลิป" aria-valuemin="0" aria-valuemax="${total.toFixed(1)}" aria-valuenow="0"><i></i></div>
           <span class="pv-time" data-time>0:00 / ${clock(total)}</span>
         </div>
-        ${voiced && !clip ? `<audio data-audio src="${voiced.src}" preload="none"></audio>` : ""}
+        ${voiced && !clip ? `<audio data-audio src="${demoAsset(voiced.src)}" preload="none"></audio>` : ""}
         <p class="pv-note">${clip
           ? `ไฟล์ mp4 ที่ ffmpeg เรนเดอร์จริง · ${clip.w}×${clip.h} · ${clip.sizeKB} KB · ซับเบิร์นติดภาพ`
           : voiced

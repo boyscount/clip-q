@@ -42,10 +42,33 @@ def clip_sub_id(account_sub: str, job_id: str) -> str:
     return f"{account_sub}_{job_id}"[:SUB_ID_MAX]
 
 
+# Appending sub_id to a real affiliate link is opt-in: an unrecognised query
+# parameter on a live money link could break it, and a broken link earns
+# nothing. Turn it on only after opening one generated link and checking it
+# still lands on the product.
+APPEND_SUB_ID = os.environ.get("CLIPQUEUE_APPEND_SUBID") == "1"
+
+
 def short_link(sub_id: str) -> str:
-    # placeholder for the Shopee link-shortener call; the sub-id is what
-    # attributes commission back to this exact clip
+    # stand-in for the Shopee link shortener, used only when the product has no
+    # real affiliate link of its own
     return f"https://s.shopee.co.th/{secrets.token_urlsafe(5)}?sub_id={sub_id}"
+
+
+def affiliate_link(product: dict, sub_id: str) -> str:
+    """The link that goes in the caption.
+
+    A product imported with its own affiliate link keeps it verbatim — that is
+    the link that actually pays. Only a product without one falls back to the
+    generated placeholder.
+    """
+    real = (product.get("link") or "").strip()
+    if not real:
+        return short_link(sub_id)
+    if not APPEND_SUB_ID:
+        return real
+    joiner = "&" if "?" in real else "?"
+    return f"{real}{joiner}sub_id={sub_id}"
 
 
 def plan_schedule(req: QueueRequest, accounts: list[dict], products: list[dict]) -> list[dict]:
@@ -104,7 +127,7 @@ def plan_schedule(req: QueueRequest, accounts: list[dict], products: list[dict])
                     "cart": 1 if req.cart else 0,
                     "scheduled_at": when.isoformat(timespec="seconds"),
                     "created_at": created,
-                    "link": short_link(sub_id) if req.cart else "",
+                    "link": affiliate_link(product, sub_id) if req.cart else "",
                 })
 
     return rows

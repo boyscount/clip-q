@@ -210,6 +210,24 @@ def main() -> int:
         check("cart=false → ไม่สร้างลิงก์",
               db.connect().execute("SELECT link FROM jobs LIMIT 1").fetchone()["link"], "")
 
+        # a product imported with its own affiliate link must keep it verbatim —
+        # a generated stand-in in the caption earns nothing
+        db.connect().execute("DELETE FROM jobs")
+        real_link = "https://collshp.com/abc123?linkId=99&view=storefront"
+        db.connect().execute("UPDATE products SET link = ? WHERE user_id = ? AND id = ?",
+                             (real_link, user_a, "P-1042"))
+        c.post("/api/queue", json=queue_body(account_ids=[a1]), headers=auth_a)
+        check("ใช้ลิงก์จริงของสินค้า ไม่ใช่ลิงก์ที่สร้างเอง",
+              db.connect().execute("SELECT link FROM jobs LIMIT 1").fetchone()["link"], real_link)
+
+        db.connect().execute("DELETE FROM jobs")
+        db.connect().execute("UPDATE products SET link = '' WHERE user_id = ? AND id = ?",
+                             (user_a, "P-1042"))
+        c.post("/api/queue", json=queue_body(account_ids=[a1]), headers=auth_a)
+        check("ไม่มีลิงก์จริง → ใช้ตัวสำรองที่มี sub_id",
+              "sub_id=" in db.connect().execute(
+                  "SELECT link FROM jobs LIMIT 1").fetchone()["link"], True)
+
         # ----------------------------------------------------- idempotency
         section("5. ยิงซ้ำไม่สร้างงานซ้ำ")
         db.connect().execute("DELETE FROM jobs")
