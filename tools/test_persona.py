@@ -62,8 +62,9 @@ def main() -> int:
         for n in ["02.jpg", "01.jpg", "03.mp4", "readme.txt", "04.PNG"]:
             (folder / n).write_bytes(b"x")
         got = [p.name for p in persona.shots("น้องมายด์ สายบิวตี้")]
-        check("เรียงตามชื่อ และตัดไฟล์ที่ไม่ใช่สื่อออก", got,
-              ["01.jpg", "02.jpg", "03.mp4", "04.PNG"])
+        # วิดีโอมาก่อน เพราะช่องสำหรับคนมีจำกัด ช็อตที่ขยับได้คุ้มกว่าภาพนิ่ง
+        check("วิดีโอขึ้นก่อน แล้วรูปเรียงตามชื่อ ตัดไฟล์ที่ไม่ใช่สื่อออก", got,
+              ["03.mp4", "01.jpg", "02.jpg", "04.PNG"])
         check("รู้จักวิดีโอ", persona.is_video(Path("a/03.mp4")), True)
         check("รูปไม่ใช่วิดีโอ", persona.is_video(Path("a/01.jpg")), False)
         check("ไม่มีโฟลเดอร์ = ไม่มีช็อต", persona.shots("ไม่มีใคร"), [])
@@ -76,17 +77,21 @@ def main() -> int:
     check("ช็อตสุดท้ายเป็นคน", plan[-1] in people, True)
     check("จำนวนช็อตเท่าเดิม", len(plan), len(products))
     check("รูปแบบ", kinds(plan, people), "คสสสค")
+    check("สัดส่วนคนตั้งต้น", persona.PERSON_SHARE, 0.55)
 
     print("\n5. มีคนรูปเดียว")
     one = P("c1")
     plan = persona.interleave(products, one)
     check("ใช้เปิดอย่างเดียว ไม่ซ้ำท้าย", kinds(plan, one), "คสสสส")
 
-    print("\n6. มีคนเยอะ แต่ไม่เกินหนึ่งในสาม")
+    print("\n6. มีไฟล์คนเยอะ — ใช้ตาม PERSON_SHARE แต่ต้องเหลือที่ให้สินค้า")
     many = P("c1", "c2", "c3", "c4", "c5", "c6")
     plan = persona.interleave(products, many)
     person_count = sum(1 for p in plan if p in many)
-    check("ไม่เกินราวหนึ่งในสาม", person_count <= 2, True)
+    want = min(len(many), len(products) - 1,
+               max(1, round(len(products) * persona.PERSON_SHARE)))
+    check("จำนวนคนตาม PERSON_SHARE", person_count, want)
+    check("ยังเหลือช็อตสินค้าอย่างน้อยหนึ่งช็อต", person_count < len(plan), True)
     check("ยังเปิดและปิดด้วยคน", plan[0] in many and plan[-1] in many, True)
 
     print("\n7. ช็อตเยอะขึ้น คนแทรกกลางด้วย")

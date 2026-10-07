@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 from pathlib import Path
 
@@ -28,6 +29,9 @@ MEDIA_SUFFIXES = IMAGE_SUFFIXES | VIDEO_SUFFIXES
 NONE_NAMES = {"", "ไม่ใช้ตัวละคร", "none", "-"}
 
 _UNSAFE = re.compile(r"[^0-9A-Za-z฀-๿]+")
+
+# สัดส่วนช็อตคนต่อช็อตทั้งหมด ปรับได้ด้วย CLIPQUEUE_PERSON_SHARE (0.0-0.8)
+PERSON_SHARE = min(0.8, max(0.0, float(os.environ.get("CLIPQUEUE_PERSON_SHARE", "0.55"))))
 
 
 def slug(name: str) -> str:
@@ -60,10 +64,12 @@ def shots(name: str) -> list[Path]:
     folder = folder_for(name)
     if folder is None:
         return []
-    return sorted(
+    files = sorted(
         p for p in folder.iterdir()
         if p.is_file() and p.suffix.lower() in MEDIA_SUFFIXES
     )
+    # วิดีโอมาก่อนรูปนิ่ง: เมื่อช่องสำหรับคนมีจำกัด ช็อตที่ขยับจริงกินใจกว่าภาพนิ่ง
+    return sorted(files, key=lambda f: (not is_video(f),))
 
 
 def is_video(path: Path) -> bool:
@@ -84,8 +90,9 @@ def interleave(product_shots: list[Path], persona_shots: list[Path],
 
     total = max(2, count or len(product_shots))
 
-    # คนได้ราวหนึ่งในสามของช็อตทั้งหมด แต่ไม่เกินจำนวนไฟล์ที่มีจริง
-    want_person = min(len(persona_shots), max(1, round(total / 3)))
+    # สัดส่วนคนตาม PERSON_SHARE แต่ไม่เกินจำนวนไฟล์ที่มีจริง และต้องเหลือ
+    # ช่องให้สินค้าอย่างน้อยหนึ่งช็อต — คลิปที่ไม่เห็นสินค้าเลยขายไม่ได้
+    want_person = min(len(persona_shots), total - 1, max(1, round(total * PERSON_SHARE)))
 
     slots = {0}                                   # ช็อตแรกเป็นคนเสมอ
     if want_person > 1:

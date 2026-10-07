@@ -23,12 +23,26 @@ SEGMENT_FILTER = (
 )
 
 
-# A persona clip is already a framed shot of a person, so it is cropped to fill
-# rather than letterboxed onto a blurred bed the way a product photo is.
+# A persona shot is already composed around a person, so it fills the frame
+# instead of sitting on the blurred bed a product photo needs.
 VIDEO_FILTER = (
     "scale={w}:{h}:force_original_aspect_ratio=increase,"
     "crop={w}:{h},setsar=1,fps={fps},format=yuv420p"
 )
+
+# A still of a person needs more movement than a product photo to stop reading
+# as a photo — a wider zoom range plus a slow drift, which zoompan clamps
+# inside the frame because the zoom always leaves slack.
+PORTRAIT_FILTER = (
+    "[0:v]scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h},setsar=1[base];"
+    "[base]zoompan=z='{zoom}'"
+    ":x='iw/2-(iw/zoom/2)+sin(on/{fps}*0.7)*(iw*0.012)'"
+    ":y='ih/2-(ih/zoom/2)-(on/{fps})*{drift}'"
+    ":d=1:s={w}x{h}:fps={fps},format=yuv420p[v]"
+)
+PORTRAIT_IN = "min(1+0.00075*on,1.20)"
+PORTRAIT_OUT = "max(1.20-0.00075*on,1.0)"
+PORTRAIT_DRIFT = 5  # พิกเซลต่อวินาที เงยขึ้นช้า ๆ ให้เหมือนกล้องมีชีวิต
 
 
 def _segment_image(image: Path, out: Path, seconds: float, zoom: str,
@@ -62,26 +76,50 @@ def _segment_video(clip: Path, out: Path, seconds: float,
     ])
 
 
+def _segment_portrait(image: Path, out: Path, seconds: float, zoom: str,
+                      w: int, h: int, crf: int) -> None:
+    """A still of a person: fill the frame and keep it moving."""
+    ff.run([
+        "-loop", "1", "-framerate", str(FPS), "-t", f"{seconds:.3f}", "-i", str(image),
+        "-filter_complex", PORTRAIT_FILTER.format(
+            w=w, h=h, fps=FPS, zoom=zoom, drift=PORTRAIT_DRIFT),
+        "-map", "[v]",
+        "-c:v", "libx264", "-preset", "veryfast", "-crf", str(crf),
+        "-pix_fmt", "yuv420p", "-r", str(FPS),
+        str(out),
+    ])
+
+
 def _segment(source: Path, out: Path, seconds: float, zoom: str,
-             w: int, h: int, crf: int) -> None:
+             w: int, h: int, crf: int, portrait: bool = False) -> None:
     from . import persona
     if persona.is_video(source):
         _segment_video(source, out, seconds, w, h, crf)
+    elif portrait:
+        _segment_portrait(source, out, seconds, zoom, w, h, crf)
     else:
         _segment_image(source, out, seconds, zoom, w, h, crf)
 
 
 def build_visual(shots: list[Path], total: float, workdir: Path,
-                 w: int = 1080, h: int = 1920, crf: int = 20) -> Path:
-    """shots เป็นได้ทั้งรูปนิ่งและคลิปสั้น ปนกันในลำดับเดียวได้"""
+                 w: int = 1080, h: int = 1920, crf: int = 20,
+                 people: set[Path] | None = None) -> Path:
+    """shots เป็นได้ทั้งรูปนิ่งและคลิปสั้น ปนกันในลำดับเดียวได้
+
+    people บอกว่าช็อตไหนเป็นคน เพื่อให้จัดเฟรมและการเคลื่อนไหวคนละแบบกับสินค้า
+    """
     if not shots:
         raise ValueError("ไม่มีช็อตให้เรนเดอร์")
 
+    people = people or set()
     seconds = max(MIN_SEG, total / len(shots))
     parts = []
     for i, shot in enumerate(shots):
         part = workdir / f"seg_{i:02d}.mp4"
-        _segment(shot, part, seconds, ZOOM_IN if i % 2 == 0 else ZOOM_OUT, w, h, crf)
+        portrait = shot in people
+        zoom = (PORTRAIT_IN if i % 2 == 0 else PORTRAIT_OUT) if portrait else \
+               (ZOOM_IN if i % 2 == 0 else ZOOM_OUT)
+        _segment(shot, part, seconds, zoom, w, h, crf, portrait)
         parts.append(part)
 
     listing = workdir / "segments.txt"

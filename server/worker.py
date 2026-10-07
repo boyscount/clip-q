@@ -95,13 +95,15 @@ def render(job) -> dict:
         people = persona.shots(job["persona"])
         if people:
             shots = persona.interleave(shots, people)
+            used = [s for s in shots if s in people]
+            moving = sum(1 for s in used if persona.is_video(s))
             db.log(job["user_id"],
-                   f"ใส่ช็อต {job['persona']} {sum(1 for s in shots if s in people)} ช็อต",
-                   "ok", job["id"])
+                   f"ใส่ช็อต {job['persona']} {len(used)}/{len(shots)} ช็อต"
+                   f" (วิดีโอ {moving})", "ok", job["id"])
 
         ass = subtitle.write_ass(work / "captions.ass", cues, product, total, w, h)
         db.set_progress(job["id"], 60)
-        visual = renderer.build_visual(shots, total, work, w, h)
+        visual = renderer.build_visual(shots, total, work, w, h, people=set(people))
         db.set_progress(job["id"], 85)
 
         RENDERS.mkdir(parents=True, exist_ok=True)
@@ -172,8 +174,26 @@ def handoff(job, result: dict) -> None:
             db.log(job["user_id"], "ส่งแจ้งเตือนไม่สำเร็จ", "warn", job["id"])
 
 
+# A fresh process means no render of ours is actually running, so jobs left at
+# 'rendering' are orphans — from a crash, a restart, or uvicorn --reload firing
+# mid-render. Safe on a single worker; leave it off when several workers share
+# one database, or a starting worker would steal a job another one is running.
+RECLAIM_ON_START = os.environ.get("CLIPQUEUE_RECLAIM_ON_START", "1") == "1"
+
+
 def loop() -> None:
     db.init()
+    if RECLAIM_ON_START:
+        rows = db.connect().execute(
+            "SELECT id FROM jobs WHERE status = 'rendering'").fetchall()
+        for row in rows:
+            db.connect().execute(
+                "UPDATE jobs SET status='queued', progress=0,"
+                " error='เซิร์ฟเวอร์รีสตาร์ตระหว่างเรนเดอร์ ส่งกลับเข้าคิว' WHERE id=?",
+                (row["id"],),
+            )
+        if rows:
+            print(f"ส่งงานที่ค้างอยู่กลับเข้าคิว {len(rows)} ชิ้น")
     while not _stop.is_set():
         try:
             busy = run_once()
