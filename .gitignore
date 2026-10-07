@@ -19,3 +19,7 @@ assets/images/
 #   python tools/make_preview_video.py
 app/assets/*.mp3
 app/assets/*.mp4
+
+# ช็อตคน — เป็นรูป/คลิปของผู้ใช้เอง ไม่ขึ้น git
+app/assets/personas/*
+!app/assets/personas/README.md

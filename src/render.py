@@ -23,7 +23,16 @@ SEGMENT_FILTER = (
 )
 
 
-def _segment(image: Path, out: Path, seconds: float, zoom: str, w: int, h: int, crf: int) -> None:
+# A persona clip is already a framed shot of a person, so it is cropped to fill
+# rather than letterboxed onto a blurred bed the way a product photo is.
+VIDEO_FILTER = (
+    "scale={w}:{h}:force_original_aspect_ratio=increase,"
+    "crop={w}:{h},setsar=1,fps={fps},format=yuv420p"
+)
+
+
+def _segment_image(image: Path, out: Path, seconds: float, zoom: str,
+                   w: int, h: int, crf: int) -> None:
     ff.run([
         "-loop", "1", "-framerate", str(FPS), "-t", f"{seconds:.3f}", "-i", str(image),
         "-filter_complex", SEGMENT_FILTER.format(
@@ -39,16 +48,40 @@ def _segment(image: Path, out: Path, seconds: float, zoom: str, w: int, h: int, 
     ])
 
 
-def build_visual(images: list[Path], total: float, workdir: Path,
-                 w: int = 1080, h: int = 1920, crf: int = 20) -> Path:
-    if not images:
-        raise ValueError("ไม่มีรูปสินค้า")
+def _segment_video(clip: Path, out: Path, seconds: float,
+                   w: int, h: int, crf: int) -> None:
+    """Cut `seconds` out of a clip. Loops it when the source is shorter, so a
+    three-second shot can still fill a five-second slot."""
+    ff.run([
+        "-stream_loop", "-1", "-t", f"{seconds:.3f}", "-i", str(clip),
+        "-an",  # the voiceover is the only audio in the finished clip
+        "-vf", VIDEO_FILTER.format(w=w, h=h, fps=FPS),
+        "-c:v", "libx264", "-preset", "veryfast", "-crf", str(crf),
+        "-pix_fmt", "yuv420p", "-r", str(FPS),
+        str(out),
+    ])
 
-    seconds = max(MIN_SEG, total / len(images))
+
+def _segment(source: Path, out: Path, seconds: float, zoom: str,
+             w: int, h: int, crf: int) -> None:
+    from . import persona
+    if persona.is_video(source):
+        _segment_video(source, out, seconds, w, h, crf)
+    else:
+        _segment_image(source, out, seconds, zoom, w, h, crf)
+
+
+def build_visual(shots: list[Path], total: float, workdir: Path,
+                 w: int = 1080, h: int = 1920, crf: int = 20) -> Path:
+    """shots เป็นได้ทั้งรูปนิ่งและคลิปสั้น ปนกันในลำดับเดียวได้"""
+    if not shots:
+        raise ValueError("ไม่มีช็อตให้เรนเดอร์")
+
+    seconds = max(MIN_SEG, total / len(shots))
     parts = []
-    for i, image in enumerate(images):
+    for i, shot in enumerate(shots):
         part = workdir / f"seg_{i:02d}.mp4"
-        _segment(image, part, seconds, ZOOM_IN if i % 2 == 0 else ZOOM_OUT, w, h, crf)
+        _segment(shot, part, seconds, ZOOM_IN if i % 2 == 0 else ZOOM_OUT, w, h, crf)
         parts.append(part)
 
     listing = workdir / "segments.txt"

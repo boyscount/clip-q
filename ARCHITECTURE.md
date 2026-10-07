@@ -52,6 +52,7 @@ poc-clipbot/
 | `render.py` | 94 | Ken Burns ต่อช็อต → concat → mux + เบิร์นซับ |
 | `subtitle.py` | 93 | cue → ไฟล์ `.ass` ขนาดฟอนต์/ขอบตามสัดส่วนเฟรม |
 | `images.py` | 93 | ดาวน์โหลดรูป ทำเป็นช็อตจัตุรัส 1200px |
+| `persona.py` | - | หาช็อตคนจาก `app/assets/personas/` และเรียงสลับกับสินค้า |
 | `main.py` | 81 | CLI รันท่อทั้งเส้นจาก `product.json` |
 | `ff.py` | 49 | ครอบ ffmpeg/ffprobe + ข้อความ error ที่อ่านรู้เรื่อง |
 | `speech.py` | 30 | โมเดลความเร็วการพูด อ่านค่าจาก `app/speech-model.json` |
@@ -204,8 +205,19 @@ HTML/CSS/JS ล้วน ไม่มี build step ไม่มี dependency �
    ├─ voice       edge-tts ทีละบรรทัด → ตัดความเงียบ → มิกซ์ + cue
    ├─ subtitle    cue → .ass
    ├─ images      รูปสินค้า → ช็อตจัตุรัส 1200px
+   ├─ persona     แทรกช็อตคนจาก app/assets/personas/ สลับกับสินค้า
    └─ render      Ken Burns → concat → mux + เบิร์นซับ → mp4
 ```
+
+### ช็อตคน
+
+วางรูปหรือคลิปสั้นของคนไว้ที่ `app/assets/personas/<ชื่อตัวละคร>/` แล้วตัวละคร
+ที่เลือกในแอปจะมีผลจริง — ระบบ **เปิดด้วยคน กลางเป็นสินค้า ปิดด้วยคนตอนพูด CTA**
+คนได้ราวหนึ่งในสามของช็อตทั้งหมด
+
+`render.py` รับทั้งรูปนิ่งและวิดีโอในลำดับเดียวกัน — รูปใช้ Ken Burns ส่วนวิดีโอ
+ครอปเต็มเฟรมและวนซ้ำถ้าสั้นกว่าช่องที่ต้องเติม ไม่มีโฟลเดอร์ = ใช้ภาพสินค้าล้วน
+เหมือนเดิม
 
 ### โมเดลความเร็วการพูด
 
@@ -297,17 +309,19 @@ handoff()            คัดลอกเข้า outbox + ส่งแจ้�
 
 ## 10. การทดสอบ
 
-**193 เคส** รันได้โดยไม่ต้องมี ffmpeg เน็ต หรือ API key
+**222 เคส** รันได้โดยไม่ต้องมี ffmpeg เน็ต หรือ API key
 
 | ชุด | เคส | ครอบคลุม |
 |---|---|---|
 | `test_server.py` | 105 | auth · ดักข้อมูล 23 เคส · แยกผู้ใช้ · จัดตาราง · idempotency · วงจรชีวิตงาน · worker แย่งงาน · งานค้าง · path traversal · rate limit · migration · โหมดสาธารณะ |
 | `test_stats.py` | 50 | แปลงเงิน · จับคู่ sub-id · ยิงซ้ำไม่เพิ่มแถว · ออเดอร์ยกเลิก |
 | `test_handoff.py` | 38 | ชื่อไฟล์ · แจ้งเตือน · outbox · หน้ามือถือ |
+| `test_persona.py` | 29 | หาโฟลเดอร์ตัวละคร · เรียงช็อตคนสลับสินค้า · กรณีขอบ |
 | `test_bullets.py` | - | batching · cache · ตัวกรองความยาว · โมเดลปฏิเสธ |
 
 ```bash
 python tools/test_server.py
+python tools/test_persona.py
 python tools/test_stats.py
 python tools/test_handoff.py
 python tools/test_bullets.py

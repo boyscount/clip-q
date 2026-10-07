@@ -56,7 +56,7 @@ def photos_for(product_id: str, count: int) -> list[Path]:
 
 def render(job) -> dict:
     """Run the pipeline for one job. Returns the fields to store."""
-    from src import images, render as renderer, script_gen, speech, subtitle, voice
+    from src import images, persona, render as renderer, script_gen, speech, subtitle, voice
 
     user_id = job["user_id"]
     product = db.product(user_id, job["product_id"])
@@ -90,6 +90,14 @@ def render(job) -> dict:
                 "ไม่มีรูปสินค้า — รัน tools/fetch_products.py เพื่อดึงรูปก่อน"
             )
         shots = images.prepare(shots, work / "shots", product.get("shots", 4)) or shots
+
+        # ช็อตคนจาก app/assets/personas/<ชื่อตัวละคร>/ — ไม่มีก็ใช้สินค้าล้วน
+        people = persona.shots(job["persona"])
+        if people:
+            shots = persona.interleave(shots, people)
+            db.log(job["user_id"],
+                   f"ใส่ช็อต {job['persona']} {sum(1 for s in shots if s in people)} ช็อต",
+                   "ok", job["id"])
 
         ass = subtitle.write_ass(work / "captions.ass", cues, product, total, w, h)
         db.set_progress(job["id"], 60)
