@@ -1,0 +1,8 @@
+{
+ "per_line": 0.3323,
+ "per_char": 0.06046,
+ "voice": "th-TH-PremwadeeNeural",
+ "rate": "+8%",
+ "samples": 12,
+ "mean_error_sec": 0.395
+}

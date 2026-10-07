@@ -1,0 +1,2442 @@
+<title>ClipQueue</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bai+Jamjuree:wght@500;600;700&family=IBM+Plex+Sans+Thai:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+
+<style>
+/* Layout: dark console — collapsible left menu, one config page split into two setting panels, sticky commit bar */
+:root {
+  /* Dark is the default on purpose rather than following the OS: this is a
+     console that stays open for hours, and the clip previews read better on
+     a dark ground. Light is opt-in through the toggle. */
+  --bg: #0E0F12;
+  --surface: #16181D;
+  --surface-2: #1E2128;
+  --surface-3: #262A32;
+  --line: #2C313A;
+  --fg: #F1F3F6;
+  --fg-dim: #A6ACB8;
+  --fg-mute: #6E7480;
+  --accent: #F5A524;
+  --accent-2: #FFCB5B;
+  --accent-soft: #2E2208;
+  --accent-fg: #1A1200;
+  --accent-fg-dim: rgba(26, 18, 0, .72);
+  --ok: #35C28D;
+  --ok-soft: #10281F;
+  --run: #8B7CF6;
+  --run-soft: #1C1933;
+  --wait: #6E7480;
+  --wait-soft: #1E2128;
+  --fail: #FF6B6B;
+  --fail-soft: #2C1514;
+  --scrim: rgba(4, 5, 7, .6);
+
+  --display: "Bai Jamjuree", "Trebuchet MS", sans-serif;
+  --body: "IBM Plex Sans Thai", "Leelawadee UI", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, monospace;
+
+  color-scheme: dark;
+}
+
+:root[data-theme="light"] {
+  --bg: #F3F5F8;
+  --surface: #FFFFFF;
+  --surface-2: #EBEEF3;
+  --surface-3: #DFE3EA;
+  --line: #D6DBE3;
+  --fg: #14161B;
+  --fg-dim: #4A505B;
+  --fg-mute: #757C89;
+  --accent: #A8650A;
+  --accent-2: #7A4A05;
+  --accent-soft: #FBF0DB;
+  --accent-fg: #FFFFFF;
+  --accent-fg-dim: rgba(255, 255, 255, .78);
+  --ok: #0B7A5C;
+  --ok-soft: #DCF0E9;
+  --run: #5A49D6;
+  --run-soft: #E7E4FB;
+  --wait: #757C89;
+  --wait-soft: #E7EAEF;
+  --fail: #B4342A;
+  --fail-soft: #FAE4E2;
+  --scrim: rgba(20, 22, 27, .45);
+
+  color-scheme: light;
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--body);
+  font-size: 14px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+button, input, select { font: inherit; color: inherit; }
+button { cursor: pointer; border: none; background: none; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: .001ms !important; transition-duration: .001ms !important; }
+}
+
+/* ---------- shell ---------- */
+.app { display: grid; grid-template-columns: 232px minmax(0, 1fr); align-items: start; }
+.rail {
+  position: sticky; top: env(safe-area-inset-top, 0px);
+  height: calc(100vh - env(safe-area-inset-top, 0px));
+  border-right: 1px solid var(--line);
+  background: var(--surface);
+  padding: 18px 12px;
+  display: flex; flex-direction: column; gap: 16px;
+  overflow-y: auto;
+}
+.brand { display: flex; align-items: center; gap: 10px; padding: 0 6px 2px; }
+.brand-mark {
+  width: 30px; height: 30px; border-radius: 9px; flex: none;
+  background: linear-gradient(140deg, var(--accent-2), var(--accent));
+  color: var(--accent-fg); display: grid; place-items: center;
+  font-size: 15px; font-weight: 700;
+}
+.brand-name { font-family: var(--display); font-weight: 700; font-size: 15.5px; }
+.brand-sub { font-size: 10.5px; color: var(--fg-mute); margin-top: -2px; }
+
+.nav { display: flex; flex-direction: column; gap: 2px; }
+.nav-sep { height: 1px; background: var(--line); margin: 9px 6px; }
+.nav-item, .nav-group {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  padding: 8px 10px; border-radius: 8px; text-align: left;
+  color: var(--fg-dim); font-size: 13px;
+  transition: background .12s, color .12s;
+}
+.nav-item:hover, .nav-group:hover { background: var(--surface-2); color: var(--fg); }
+.nav-item[aria-current="true"] { background: var(--accent-soft); color: var(--accent-2); font-weight: 600; }
+.nav-ico { width: 16px; text-align: center; flex: none; opacity: .85; font-size: 13px; }
+.nav-count {
+  margin-left: auto; font-family: var(--mono); font-size: 10.5px;
+  color: var(--fg-mute); font-variant-numeric: tabular-nums;
+}
+.nav-caret { margin-left: auto; font-size: 10px; color: var(--fg-mute); transition: transform .15s; }
+.nav-group[aria-expanded="true"] .nav-caret { transform: rotate(180deg); }
+.nav-sub { display: grid; gap: 2px; padding: 2px 0 4px 26px; }
+.nav-sub[hidden] { display: none; }
+.sub-item {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  padding: 6px 10px; border-radius: 7px; text-align: left;
+  font-size: 12.5px; color: var(--fg-mute);
+  border-left: 1px solid var(--line);
+}
+.sub-item:hover { color: var(--fg); background: var(--surface-2); }
+.sub-item[aria-current="true"] {
+  background: var(--accent); color: var(--accent-fg); font-weight: 600;
+  border-left-color: var(--accent);
+}
+.sub-item small { margin-left: auto; font-family: var(--mono); font-size: 10.5px; opacity: .7; }
+
+.rail-foot { margin-top: auto; border-top: 1px solid var(--line); padding-top: 12px; display: grid; gap: 7px; }
+.worker { display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: var(--fg-dim); }
+.pulse { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); flex: none; animation: pulse 1.8s ease-in-out infinite; }
+@keyframes pulse { 0%, 100% { opacity: 1 } 50% { opacity: .25 } }
+.ver { font-size: 10.5px; color: var(--fg-mute); font-family: var(--mono); }
+
+.main { min-width: 0; padding: 0 22px 40px; }
+.topbar {
+  position: sticky; top: env(safe-area-inset-top, 0px); z-index: 20;
+  background: var(--bg); padding: 20px 0 13px;
+  border-bottom: 1px solid var(--line); margin-bottom: 18px;
+  display: flex; align-items: flex-end; gap: 16px; flex-wrap: wrap;
+}
+.topbar h1 { font-family: var(--display); font-size: 20px; font-weight: 600; margin: 0; }
+.topbar p { margin: 2px 0 0; font-size: 12.5px; color: var(--fg-mute); max-width: 60ch; }
+.topbar-actions { margin-left: auto; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+
+/* ---------- controls ---------- */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+  padding: 8px 14px; border-radius: 8px; font-weight: 500; font-size: 13px;
+  border: 1px solid var(--line); background: var(--surface-2); color: var(--fg-dim);
+  transition: background .12s, border-color .12s, color .12s;
+}
+.btn:hover { border-color: var(--fg-mute); color: var(--fg); }
+.btn-primary {
+  background: linear-gradient(140deg, var(--accent-2), var(--accent));
+  border-color: var(--accent); color: var(--accent-fg); font-weight: 700;
+}
+.btn-primary:hover { filter: brightness(1.08); color: var(--accent-fg); }
+.btn:disabled { opacity: .4; cursor: not-allowed; }
+.btn-sm { padding: 5px 11px; font-size: 12px; }
+
+.chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 12px; border-radius: 999px; font-size: 12.5px;
+  border: 1px solid var(--line); background: var(--surface-2); color: var(--fg-dim);
+  transition: border-color .12s, background .12s, color .12s;
+}
+.chip:hover { border-color: var(--fg-mute); }
+.chip[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-2); font-weight: 600; }
+
+select.input, input.input {
+  width: 100%; padding: 9px 11px; border-radius: 8px;
+  border: 1px solid var(--line); background: var(--surface-2); color: var(--fg);
+  font-size: 13px;
+}
+select.input:hover, input.input:hover { border-color: var(--fg-mute); }
+input.input::placeholder { color: var(--fg-mute); }
+
+.status {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 2px 9px; border-radius: 999px; font-size: 11.5px; font-weight: 600; white-space: nowrap;
+}
+.status::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+.s-wait { background: var(--wait-soft); color: var(--wait); }
+.s-run  { background: var(--run-soft);  color: var(--run); }
+.s-hold { background: var(--accent-soft); color: var(--accent-2); }
+.s-done { background: var(--ok-soft);   color: var(--ok); }
+.s-fail { background: var(--fail-soft); color: var(--fail); }
+
+/* ---------- config page ---------- */
+.panels { display: grid; grid-template-columns: repeat(auto-fit, minmax(310px, 1fr)); gap: 16px; }
+.panel { border: 1px solid var(--line); border-radius: 12px; background: var(--surface); overflow: hidden; }
+.panel-head {
+  padding: 11px 16px; border-bottom: 1px solid var(--line); background: var(--surface-2);
+  font-size: 11px; letter-spacing: .12em; text-transform: uppercase;
+  font-weight: 700; color: var(--accent-2);
+}
+.panel-body { padding: 16px; display: grid; gap: 15px; }
+
+.ctl { display: grid; gap: 7px; }
+.ctl > label, .ctl-k { font-size: 11.5px; color: var(--fg-dim); font-weight: 500; }
+.ctl-hint { font-size: 11px; color: var(--fg-mute); }
+.ctl-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px; }
+
+.stepper { display: flex; align-items: center; gap: 0; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-2); overflow: hidden; }
+.stepper button { width: 38px; height: 38px; font-size: 17px; color: var(--fg-dim); flex: none; }
+.stepper button:hover { background: var(--surface-3); color: var(--accent-2); }
+.stepper input {
+  flex: 1; min-width: 0; text-align: center; border: none; background: none;
+  font-family: var(--mono); font-size: 15px; font-variant-numeric: tabular-nums; padding: 0;
+}
+.stepper input::-webkit-outer-spin-button, .stepper input::-webkit-inner-spin-button { appearance: none; margin: 0; }
+
+.switch-row {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 12px; border-radius: 9px; background: var(--surface-2); border: 1px solid var(--line);
+}
+.switch-row .t { flex: 1; min-width: 0; }
+.switch-row .t b { display: block; font-size: 12.5px; font-weight: 500; }
+.switch-row .t small { font-size: 11px; color: var(--fg-mute); }
+.switch {
+  width: 42px; height: 24px; border-radius: 999px; flex: none;
+  background: var(--surface-3); border: 1px solid var(--line); position: relative;
+  transition: background .15s, border-color .15s;
+}
+.switch::after {
+  content: ""; position: absolute; top: 2px; left: 2px;
+  width: 18px; height: 18px; border-radius: 50%; background: var(--fg-mute);
+  transition: transform .15s, background .15s;
+}
+.switch[aria-checked="true"] { background: var(--accent-soft); border-color: var(--accent); }
+.switch[aria-checked="true"]::after { transform: translateX(18px); background: var(--accent); }
+
+.bigopts { display: grid; gap: 8px; }
+.bigbtn {
+  display: flex; align-items: center; gap: 11px; width: 100%; text-align: left;
+  padding: 12px 14px; border-radius: 9px;
+  border: 1px solid var(--line); background: var(--surface-2); color: var(--fg-dim);
+  transition: border-color .12s, background .12s, color .12s;
+}
+.bigbtn:hover { border-color: var(--fg-mute); color: var(--fg); }
+.bigbtn b { font-size: 13px; font-weight: 600; display: block; }
+.bigbtn small { font-size: 11px; color: var(--fg-mute); }
+.bigbtn[aria-pressed="true"] {
+  background: linear-gradient(140deg, var(--accent-2), var(--accent));
+  border-color: var(--accent); color: var(--accent-fg);
+}
+.bigbtn[aria-pressed="true"] small { color: var(--accent-fg-dim); }
+.bigbtn .ico { font-size: 16px; flex: none; }
+
+.linked { display: grid; gap: 7px; max-height: 196px; overflow-y: auto; }
+.linked-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 10px; border-radius: 8px; background: var(--surface-2); border: 1px solid var(--line);
+}
+.linked-item i { width: 30px; height: 30px; border-radius: 6px; flex: none; }
+.linked-item .t { flex: 1; min-width: 0; }
+.linked-item .t b { display: block; font-size: 12.5px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.linked-item .t small { font-family: var(--mono); font-size: 11px; color: var(--fg-mute); }
+.linked-item button { color: var(--fg-mute); font-size: 15px; padding: 0 4px; flex: none; }
+.linked-item button:hover { color: var(--fail); }
+.blank {
+  padding: 18px 12px; border: 1px dashed var(--line); border-radius: 9px;
+  text-align: center; font-size: 12px; color: var(--fg-mute);
+}
+
+.acct-pick { display: grid; gap: 7px; }
+.acct-item {
+  display: flex; align-items: center; gap: 10px; width: 100%; text-align: left;
+  padding: 9px 11px; border-radius: 8px;
+  border: 1px solid var(--line); background: var(--surface-2); color: var(--fg-dim);
+}
+.acct-item:hover { border-color: var(--fg-mute); }
+.acct-item[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); color: var(--fg); }
+.box {
+  width: 17px; height: 17px; border-radius: 5px; flex: none;
+  border: 1px solid var(--line); background: var(--surface-3);
+  display: grid; place-items: center; font-size: 11px; color: transparent;
+}
+.acct-item[aria-pressed="true"] .box { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+.acct-item .t { flex: 1; min-width: 0; }
+.acct-item .t b { display: block; font-size: 12.5px; font-weight: 500; }
+.acct-item .t small { font-size: 11px; color: var(--fg-mute); }
+
+.commit {
+  position: sticky; bottom: 0; z-index: 18;
+  margin: 18px -22px 0; padding: 14px 22px;
+  padding-bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+  background: linear-gradient(180deg, transparent, var(--bg) 22%);
+  display: grid; gap: 8px;
+}
+.commit .btn-primary { width: 100%; padding: 15px; font-size: 15px; border-radius: 10px; }
+.commit-hint { text-align: center; font-size: 11.5px; color: var(--fg-mute); }
+.commit-hint b { color: var(--accent-2); font-family: var(--mono); }
+
+/* ---------- mock player ---------- */
+.pv { display: grid; gap: 10px; }
+.pv-frame {
+  position: relative; width: 100%; max-width: 100%; margin: 0 auto;
+  border-radius: 12px; overflow: hidden; background: #0A0B0D;
+  border: 1px solid var(--line);
+}
+.pv-video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #0A0B0D; }
+.pv-shot { position: absolute; inset: 0; opacity: 0; transition: opacity .45s ease; }
+.pv-shot.on { opacity: 1; }
+.pv-shot i {
+  position: absolute; inset: 0; display: grid; place-items: center;
+  font-family: var(--display); font-weight: 700; font-style: normal;
+  color: rgba(255,255,255,.9); font-size: clamp(22px, 7cqw, 40px);
+}
+.pv-frame { container-type: inline-size; }
+.pv-card {
+  position: absolute; left: 11%; right: 11%; top: 24%; bottom: 24%;
+  border: 2px solid rgba(255,255,255,.5); border-radius: 12px;
+}
+.pv-top {
+  position: absolute; left: 0; right: 0; top: 6%;
+  text-align: center; display: grid; gap: 3px; padding: 0 8%;
+}
+.pv-price {
+  font-family: var(--display); font-weight: 700; color: #FFD460;
+  font-size: clamp(13px, 4.6cqw, 22px);
+  text-shadow: 0 2px 6px rgba(0,0,0,.85);
+}
+.pv-name {
+  font-size: clamp(9px, 3cqw, 14px); color: rgba(255,255,255,.94); font-weight: 600;
+  text-shadow: 0 2px 6px rgba(0,0,0,.85);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.pv-cap {
+  position: absolute; left: 6%; right: 6%; bottom: 9%;
+  text-align: center; color: #fff; font-weight: 600; line-height: 1.35;
+  font-size: clamp(11px, 3.8cqw, 18px);
+  text-shadow: 0 0 5px #000, 0 2px 8px rgba(0,0,0,.95);
+  min-height: 2.7em;
+}
+.pv-mock {
+  position: absolute; left: 8px; top: 8px; z-index: 2;
+  padding: 2px 8px; border-radius: 5px;
+  background: rgba(8,9,11,.72); color: rgba(255,255,255,.82);
+  font-size: 10px; letter-spacing: .09em; font-weight: 700;
+}
+.pv-ratio {
+  position: absolute; right: 8px; top: 8px; z-index: 2;
+  padding: 2px 8px; border-radius: 5px;
+  background: rgba(8,9,11,.72); color: rgba(255,255,255,.82);
+  font-family: var(--mono); font-size: 10.5px;
+}
+.pv-ctl { display: flex; align-items: center; gap: 10px; }
+.pv-ctl .btn { flex: none; }
+.pv-track { flex: 1; min-width: 0; height: 5px; border-radius: 3px; background: var(--surface-3); overflow: hidden; cursor: pointer; }
+.pv-track i { display: block; height: 100%; background: var(--accent); width: 0; }
+.pv-time { font-family: var(--mono); font-size: 11.5px; color: var(--fg-mute); font-variant-numeric: tabular-nums; flex: none; }
+.pv-note { font-size: 11px; color: var(--fg-mute); text-align: center; }
+
+/* ---------- products ---------- */
+.import {
+  border: 1px solid var(--line); border-radius: 11px; background: var(--surface);
+  padding: 14px 16px; margin-bottom: 16px;
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+}
+.import-main { flex: 1 1 240px; min-width: 0; }
+.import-main h3 { margin: 0; font-size: 13.5px; font-weight: 600; }
+.import-main p { margin: 2px 0 0; font-size: 12px; color: var(--fg-mute); }
+.import-bar { width: 100%; height: 3px; border-radius: 2px; background: var(--surface-3); overflow: hidden; margin-top: 9px; }
+.import-bar i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .25s linear; }
+
+.filters { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; align-items: center; }
+.search { flex: 1 1 200px; min-width: 0; max-width: 320px; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface-2); }
+.search::placeholder { color: var(--fg-mute); }
+
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(182px, 1fr)); gap: 12px; }
+.card {
+  position: relative; text-align: left; width: 100%;
+  border: 1px solid var(--line); border-radius: 11px; background: var(--surface); overflow: hidden;
+  transition: border-color .12s;
+}
+.card:hover { border-color: var(--fg-mute); }
+.card[aria-pressed="true"] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.thumb { aspect-ratio: 1 / 1; max-width: 100%; display: grid; place-items: center; position: relative; overflow: hidden; }
+.thumb span { font-family: var(--display); font-size: 30px; font-weight: 700; color: rgba(255,255,255,.85); }
+/* the real photo covers the gradient when there is one; if it 404s the img is
+   hidden and the gradient underneath shows through unchanged */
+.thumb img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.job-thumb img, .linked-item i img { width: 100%; height: 100%; object-fit: cover; border-radius: inherit; }
+.job-thumb, .linked-item i { overflow: hidden; }
+.cell-prod i { overflow: hidden; }
+.cell-prod i img { width: 100%; height: 100%; object-fit: cover; }
+.tick {
+  position: absolute; top: 8px; right: 8px; width: 21px; height: 21px; border-radius: 50%;
+  background: rgba(14,15,18,.75); border: 1px solid var(--line);
+  display: grid; place-items: center; font-size: 12px; color: transparent;
+}
+.card[aria-pressed="true"] .tick { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+.flag, .shots {
+  position: absolute; bottom: 8px; padding: 1px 7px; border-radius: 5px; font-size: 10.5px;
+  background: rgba(8,9,11,.72); color: rgba(255,255,255,.88); backdrop-filter: blur(3px);
+}
+.flag { left: 8px; font-weight: 600; }
+.shots { right: 8px; font-family: var(--mono); }
+.card-body { padding: 10px 11px 12px; display: grid; gap: 7px; }
+.card-title { font-size: 12.5px; font-weight: 500; line-height: 1.4; min-width: 0; }
+.price-row { display: flex; align-items: baseline; gap: 7px; flex-wrap: wrap; }
+.price { font-family: var(--mono); font-size: 15px; font-variant-numeric: tabular-nums; color: var(--accent-2); }
+.price-was { font-size: 11.5px; color: var(--fg-mute); text-decoration: line-through; font-variant-numeric: tabular-nums; }
+.meta { display: flex; gap: 10px; font-size: 11.5px; color: var(--fg-mute); font-variant-numeric: tabular-nums; }
+.meta b { color: var(--ok); font-weight: 600; }
+
+.actionbar {
+  position: sticky; bottom: 0; z-index: 15;
+  margin: 18px -22px 0; padding: 12px 22px;
+  padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  background: var(--surface); border-top: 1px solid var(--line);
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+}
+.actionbar strong { font-family: var(--mono); color: var(--accent-2); font-variant-numeric: tabular-nums; }
+
+/* ---------- queue ---------- */
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(132px, 1fr)); gap: 10px; margin-bottom: 20px; }
+.kpi { border: 1px solid var(--line); border-radius: 10px; background: var(--surface); padding: 11px 13px; }
+.kpi-k { font-size: 11px; color: var(--fg-mute); }
+.kpi-v { font-family: var(--mono); font-size: 23px; font-variant-numeric: tabular-nums; line-height: 1.25; }
+
+.jobs { display: grid; gap: 8px; }
+.job {
+  border: 1px solid var(--line); border-radius: 10px; background: var(--surface); padding: 11px 13px;
+  display: grid; grid-template-columns: 38px minmax(0, 1fr) auto; gap: 12px; align-items: center;
+}
+.job-thumb { width: 38px; height: 38px; border-radius: 8px; flex: none; }
+.job-main { min-width: 0; display: grid; gap: 4px; }
+.job-title { font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.job-meta { display: flex; gap: 9px; flex-wrap: wrap; font-size: 11.5px; color: var(--fg-mute); align-items: center; }
+.job-meta code { font-family: var(--mono); font-size: 11px; }
+.cart { color: var(--ok); font-weight: 600; }
+.job-side { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; justify-content: flex-end; }
+.bar { width: 76px; height: 4px; border-radius: 2px; background: var(--surface-3); overflow: hidden; }
+.bar i { display: block; height: 100%; background: var(--run); transition: width .4s ease; }
+
+.split { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 22px; margin-bottom: 22px; }
+.slots { display: grid; gap: 7px; }
+.slot-row { display: grid; grid-template-columns: 80px minmax(0, 1fr) 34px; align-items: center; gap: 10px; font-size: 12px; }
+.slot-time { font-family: var(--mono); color: var(--fg-dim); font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.slot-track { height: 16px; background: var(--surface-2); border-radius: 5px; overflow: hidden; }
+.slot-track i { display: block; height: 100%; background: var(--accent); opacity: .8; }
+.slot-track i.alt { background: var(--run); }
+.slot-n { font-family: var(--mono); color: var(--fg-mute); text-align: right; font-variant-numeric: tabular-nums; }
+
+/* ---------- rows ---------- */
+.rows { display: grid; gap: 8px; }
+.row {
+  border: 1px solid var(--line); border-radius: 10px; background: var(--surface);
+  padding: 12px 14px; display: flex; align-items: center; gap: 13px; flex-wrap: wrap;
+}
+.avatar { width: 42px; height: 42px; border-radius: 50%; flex: none; display: grid; place-items: center; font-family: var(--display); font-weight: 600; color: rgba(255,255,255,.92); }
+.row-main { flex: 1 1 180px; min-width: 0; }
+.row-main h3 { margin: 0; font-size: 13.5px; font-weight: 600; }
+.row-main p { margin: 1px 0 0; font-size: 12px; color: var(--fg-mute); }
+.quota { display: grid; gap: 4px; min-width: 160px; }
+.quota-k { font-size: 11px; color: var(--fg-mute); font-variant-numeric: tabular-nums; display: flex; align-items: center; gap: 6px; }
+.cap-input {
+  width: 50px; padding: 2px 6px; border-radius: 6px; text-align: right;
+  border: 1px solid var(--line); background: var(--surface-2);
+  font-family: var(--mono); font-size: 11.5px; font-variant-numeric: tabular-nums;
+}
+.quota-bar { height: 4px; border-radius: 2px; background: var(--surface-3); overflow: hidden; }
+.quota-bar i { display: block; height: 100%; background: var(--ok); }
+.quota-bar i.hot { background: var(--accent); }
+.dropzone { border: 1px dashed var(--line); border-radius: 10px; padding: 22px 16px; text-align: center; color: var(--fg-mute); font-size: 12.5px; background: var(--surface); }
+
+.note {
+  border-left: 2px solid var(--accent); background: var(--surface);
+  border-radius: 0 9px 9px 0; padding: 11px 14px; font-size: 12.5px;
+  color: var(--fg-dim); margin-bottom: 18px;
+}
+.note b { color: var(--fg); font-weight: 600; }
+
+.steps { display: grid; gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; margin-bottom: 18px; }
+.step { background: var(--surface); padding: 12px 14px; display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; gap: 11px; align-items: center; }
+.step-n { font-family: var(--mono); font-size: 12px; color: var(--accent); }
+.step h4 { margin: 0; font-size: 13px; font-weight: 600; }
+.step p { margin: 1px 0 0; font-size: 12px; color: var(--fg-mute); }
+
+/* ---------- video table ---------- */
+.table-wrap { border: 1px solid var(--line); border-radius: 10px; background: var(--surface); overflow-x: auto; }
+table.vids { width: 100%; border-collapse: collapse; font-size: 12.5px; min-width: 820px; }
+table.vids th {
+  text-align: left; font-size: 10.5px; letter-spacing: .09em; text-transform: uppercase;
+  color: var(--fg-mute); font-weight: 600; padding: 10px 12px;
+  border-bottom: 1px solid var(--line); white-space: nowrap; background: var(--surface-2);
+  position: sticky; top: 0;
+}
+table.vids td { padding: 9px 12px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+table.vids tr:last-child td { border-bottom: none; }
+table.vids tbody tr { cursor: pointer; transition: background .12s; }
+table.vids tbody tr:hover { background: var(--surface-2); }
+.num { font-family: var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.cell-prod { display: flex; align-items: center; gap: 9px; min-width: 190px; }
+.cell-prod i { width: 26px; height: 26px; border-radius: 6px; flex: none; }
+.cell-prod span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 210px; }
+.ratio { display: inline-block; padding: 1px 7px; border-radius: 5px; background: var(--surface-3); font-family: var(--mono); font-size: 11px; }
+
+/* ---------- log ---------- */
+.log { display: grid; gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.log-line { background: var(--surface); padding: 9px 13px; display: grid; grid-template-columns: 62px 70px minmax(0, 1fr); gap: 12px; font-size: 12.5px; align-items: baseline; }
+.log-line time { font-family: var(--mono); font-size: 11.5px; color: var(--fg-mute); font-variant-numeric: tabular-nums; }
+.log-tag { font-size: 10px; letter-spacing: .08em; text-transform: uppercase; font-weight: 700; }
+.t-ok { color: var(--ok); } .t-run { color: var(--run); } .t-warn { color: var(--accent-2); } .t-fail { color: var(--fail); }
+
+/* ---------- drawer ---------- */
+.scrim { position: fixed; inset: 0; z-index: 40; background: var(--scrim); backdrop-filter: blur(2px); display: grid; place-items: stretch; }
+.drawer {
+  position: fixed; top: 0; right: 0; bottom: 0; z-index: 50;
+  width: min(430px, 100%); overflow-y: auto;
+  background: var(--surface); border-left: 1px solid var(--line);
+  padding: 20px; display: grid; gap: 16px; align-content: start;
+}
+.script { display: grid; gap: 7px; }
+.script-line { display: grid; grid-template-columns: 50px minmax(0, 1fr); gap: 10px; padding: 8px 10px; border-radius: 8px; background: var(--surface-2); font-size: 13px; line-height: 1.5; }
+.script-line span { font-family: var(--mono); font-size: 11px; color: var(--fg-mute); }
+.beat { font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--fg-mute); font-weight: 600; }
+.caption { background: var(--surface-2); border-radius: 8px; padding: 11px 12px; font-size: 12.5px; line-height: 1.6; white-space: pre-wrap; word-break: break-word; }
+.kv { display: grid; gap: 6px; width: 100%; }
+.kv > div { display: flex; justify-content: space-between; gap: 12px; font-size: 12.5px; }
+.kv span { color: var(--fg-mute); }
+.kv b { font-weight: 600; text-align: right; min-width: 0; }
+
+.toast {
+  position: fixed; left: 50%; transform: translateX(-50%);
+  bottom: calc(22px + env(safe-area-inset-bottom, 0px)); z-index: 60;
+  background: var(--surface-3); color: var(--fg); border: 1px solid var(--line);
+  padding: 10px 18px; border-radius: 999px; font-size: 13px; font-weight: 500;
+  box-shadow: 0 8px 28px rgba(0,0,0,.5); max-width: calc(100% - 32px); text-align: center;
+}
+.empty { text-align: center; padding: 44px 20px; color: var(--fg-mute); font-size: 13px; }
+
+/* ---------- responsive ---------- */
+@media (max-width: 900px) {
+  .app { grid-template-columns: minmax(0, 1fr); }
+  .rail {
+    position: static; height: auto; flex-direction: row; align-items: center;
+    gap: 12px; overflow-x: auto; padding: 10px 16px;
+    border-right: none; border-bottom: 1px solid var(--line);
+  }
+  .brand-sub, .rail-foot, .nav-sep { display: none; }
+  .nav { flex-direction: row; gap: 4px; }
+  .nav-item, .nav-group { white-space: nowrap; padding: 7px 11px; }
+  .nav-sub { position: absolute; z-index: 30; margin-top: 44px; padding: 8px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; }
+  .sub-item { border-left: none; }
+  .main { padding: 0 16px 40px; }
+  .actionbar, .commit { margin-left: -16px; margin-right: -16px; padding-left: 16px; padding-right: 16px; }
+  .job { grid-template-columns: 38px minmax(0, 1fr); }
+  .job-side { grid-column: 1 / -1; justify-content: flex-start; }
+  .log-line { grid-template-columns: 58px minmax(0, 1fr); }
+  .log-line .log-tag { grid-column: 2; }
+  .drawer { width: 100%; }
+}
+</style>
+
+<div class="app">
+  <aside class="rail">
+    <div class="brand">
+      <div class="brand-mark">⚡</div>
+      <div>
+        <div class="brand-name">ClipQueue</div>
+        <div class="brand-sub">Shopee Affiliate</div>
+      </div>
+    </div>
+
+    <nav class="nav" id="nav">
+      <button class="nav-item" data-view="products"><i class="nav-ico">▦</i>Product Showcase<span class="nav-count" id="n-products">12</span></button>
+
+      <button class="nav-group" data-group="make" aria-expanded="true"><i class="nav-ico">✦</i>สร้างคลิป<i class="nav-caret">▾</i></button>
+      <div class="nav-sub" id="sub-make"></div>
+
+      <button class="nav-item" data-view="cast"><i class="nav-ico">☻</i>ตัวละคร<span class="nav-count">4</span></button>
+
+      <button class="nav-group" data-group="post" aria-expanded="true"><i class="nav-ico">▶</i>โพสต์ Shopee<i class="nav-caret">▾</i></button>
+      <div class="nav-sub" id="sub-post">
+        <button class="sub-item" data-view="queue">คิวคลิป<small id="n-queue">6</small></button>
+        <button class="sub-item" data-view="videos">วิดีโอทั้งหมด<small id="n-videos">6</small></button>
+      </div>
+
+      <button class="nav-item" data-view="log"><i class="nav-ico">≡</i>Log<span class="nav-count" id="n-log">0</span></button>
+
+      <div class="nav-sep"></div>
+
+      <button class="nav-item" data-view="account"><i class="nav-ico">◈</i>Affiliate</button>
+      <button class="nav-item" data-view="settings"><i class="nav-ico">⚙</i>Settings</button>
+    </nav>
+
+    <div class="rail-foot">
+      <div class="worker"><i class="pulse" id="pulse"></i><span id="worker-text">worker ว่าง</span></div>
+      <div class="worker" id="mode-badge" title="กำลังตรวจสอบ">
+        <i class="pulse" id="mode-dot" style="background:var(--wait)"></i><span id="mode-text">กำลังต่อเซิร์ฟเวอร์…</span>
+      </div>
+      <button class="btn btn-sm" id="btn-theme" style="justify-content:flex-start">สลับโหมดสว่าง/มืด</button>
+      <div class="ver">v0.6.0 · POC</div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <!-- ======== MAKE (config page) ======== -->
+    <section class="view" id="view-make" hidden>
+      <header class="topbar">
+        <div>
+          <h1 id="make-title">สร้างคลิป</h1>
+          <p id="make-sub">ตั้งค่าครั้งเดียว แล้วกดเพิ่มลงคิว ระบบจะเขียนสคริปต์ พากย์ เรนเดอร์ และทำแคปชันพร้อมลิงก์ให้เอง</p>
+        </div>
+        <div class="topbar-actions">
+          <span class="chip" id="make-badge">รีวิวสั้น 16 วิ</span>
+          <span class="chip" id="make-ratio">9:16</span>
+        </div>
+      </header>
+
+      <div class="panels">
+        <!-- PREVIEW -->
+        <div class="panel">
+          <div class="panel-head">ตัวอย่างคลิป</div>
+          <div class="panel-body">
+            <div id="make-preview"></div>
+          </div>
+        </div>
+
+        <!-- LEFT -->
+        <div class="panel">
+          <div class="panel-head">ตั้งค่าคลิป</div>
+          <div class="panel-body">
+            <div class="ctl-2">
+              <div class="ctl">
+                <label for="f-format">รูปแบบคลิป</label>
+                <select class="input" id="f-format"></select>
+              </div>
+              <div class="ctl">
+                <label for="f-aspect">ขนาดภาพ (Aspect)</label>
+                <select class="input" id="f-aspect"></select>
+              </div>
+            </div>
+
+            <div class="ctl">
+              <div class="ctl-k">จำนวนคลิป ต่อสินค้า ต่อบัญชี</div>
+              <div class="stepper">
+                <button type="button" id="per-minus" aria-label="ลดจำนวนคลิป">−</button>
+                <input id="f-per" type="number" min="1" max="10" value="1" aria-label="จำนวนคลิปต่อสินค้า">
+                <button type="button" id="per-plus" aria-label="เพิ่มจำนวนคลิป">+</button>
+              </div>
+              <div class="ctl-hint" id="per-hint"></div>
+            </div>
+
+            <div class="ctl-2">
+              <div class="ctl">
+                <label for="f-cast">ตัวละคร</label>
+                <select class="input" id="f-cast"></select>
+              </div>
+              <div class="ctl">
+                <label for="f-voice">เสียงพากย์</label>
+                <select class="input" id="f-voice">
+                  <option value="หญิง">หญิง · Premwadee</option>
+                  <option value="ชาย">ชาย · Niwat</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="switch-row">
+              <div class="t"><b>ใส่ซับอัตโนมัติ</b><small>เบิร์นติดภาพ อ่านได้ตอนปิดเสียง</small></div>
+              <button class="switch" type="button" role="switch" aria-checked="true" id="f-sub" aria-label="ใส่ซับอัตโนมัติ"></button>
+            </div>
+
+            <div class="switch-row">
+              <div class="t"><b>ใส่เพลงประกอบ</b><small>คลอใต้เสียงพูดที่ 9%</small></div>
+              <button class="switch" type="button" role="switch" aria-checked="false" id="f-bgm" aria-label="ใส่เพลงประกอบ"></button>
+            </div>
+          </div>
+        </div>
+
+        <!-- RIGHT -->
+        <div class="panel">
+          <div class="panel-head">ตั้งค่าโพสต์ Shopee</div>
+          <div class="panel-body">
+            <div class="switch-row">
+              <div class="t"><b>ใส่แฮชแท็กอัตโนมัติ</b><small>ต่อท้ายแคปชันตามหมวดสินค้า</small></div>
+              <button class="switch" type="button" role="switch" aria-checked="true" id="f-tags" aria-label="ใส่แฮชแท็กอัตโนมัติ"></button>
+            </div>
+
+            <div class="ctl">
+              <div class="ctl-k">วิธีจัดการลิงก์สินค้า</div>
+              <div class="bigopts" id="cart-opts">
+                <button class="bigbtn" type="button" data-val="on" aria-pressed="true">
+                  <i class="ico">🛒</i><span><b>ปักตะกร้า + ใส่ลิงก์ในแคปชัน</b><small>สร้างลิงก์แยก sub-id ต่อบัญชี</small></span>
+                </button>
+                <button class="bigbtn" type="button" data-val="off" aria-pressed="false">
+                  <i class="ico">◌</i><span><b>ไม่ปักตะกร้า</b><small>คลิปเปล่า เอาไว้ปักเองทีหลัง</small></span>
+                </button>
+              </div>
+            </div>
+
+            <div class="ctl">
+              <div class="ctl-k" style="display:flex;align-items:center;gap:8px">
+                สินค้าที่เชื่อมไว้ <span class="num" id="linked-n">0</span>
+                <button class="btn btn-sm" type="button" id="go-pick" style="margin-left:auto">เลือกสินค้า</button>
+                <button class="btn btn-sm" type="button" id="clear-linked">ล้าง</button>
+              </div>
+              <div class="linked" id="linked-list"></div>
+            </div>
+
+            <div class="ctl">
+              <div class="ctl-k">บัญชีที่จะกระจาย</div>
+              <div class="acct-pick" id="acct-pick"></div>
+            </div>
+
+            <div class="ctl-2">
+              <div class="ctl">
+                <label for="f-date">เริ่มอัปวันที่</label>
+                <input class="input" id="f-date" type="date">
+              </div>
+              <div class="ctl">
+                <label for="f-time">เพิ่มรอบเวลา</label>
+                <div style="display:flex;gap:7px">
+                  <input class="input" id="f-time" type="time" style="flex:1;min-width:0">
+                  <button class="btn btn-sm" type="button" id="add-time">เพิ่ม</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="ctl">
+              <div class="ctl-k">รอบเวลาที่จะเอาไปอัป</div>
+              <div class="filters" id="slot-opts" style="margin:0"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="commit">
+        <button class="btn btn-primary" type="button" id="btn-commit">+ เพิ่มลงคิว</button>
+        <div class="commit-hint" id="commit-hint"></div>
+      </div>
+    </section>
+
+    <!-- ======== PRODUCTS ======== -->
+    <section class="view" id="view-products">
+      <header class="topbar">
+        <div>
+          <h1>Product Showcase</h1>
+          <p>ดึงสินค้าและรูปจาก Showcase มาทั้งร้านในคลิกเดียว แล้วติ๊กเลือกตัวที่จะเอาไปทำคลิป</p>
+        </div>
+      </header>
+
+      <div class="import">
+        <div class="import-main">
+          <h3>Showcase · ร้านดีดีช้อป</h3>
+          <p id="import-stat">ดึงล่าสุด 09:14 น. · 12 สินค้า · 47 รูป</p>
+          <div class="import-bar" hidden id="import-bar"><i></i></div>
+        </div>
+        <button class="btn btn-primary" id="btn-sync">ดึงสินค้าทั้งร้าน</button>
+      </div>
+
+      <div class="filters">
+        <input class="search" id="q" type="search" placeholder="ค้นหาชื่อสินค้า" aria-label="ค้นหาสินค้า">
+        <button class="chip" data-sort="com" aria-pressed="true">ค่าคอมฯ สูงสุด</button>
+        <button class="chip" data-sort="sold" aria-pressed="false">ขายดี</button>
+        <button class="chip" data-sort="price" aria-pressed="false">ราคาถูกสุด</button>
+      </div>
+
+      <div class="grid" id="product-grid"></div>
+
+      <div class="actionbar">
+        <div>เลือกไว้ <strong id="sel-count">0</strong> สินค้า</div>
+        <button class="btn btn-sm" id="btn-clear">ล้าง</button>
+        <div style="margin-left:auto;display:flex;gap:8px">
+          <button class="btn btn-sm" id="btn-all">เลือกทั้งหมดที่เห็น</button>
+          <button class="btn btn-primary" id="btn-tomake" disabled>ไปตั้งค่าคลิป</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ======== QUEUE ======== -->
+    <section class="view" id="view-queue" hidden>
+      <header class="topbar">
+        <div>
+          <h1>คิวคลิป</h1>
+          <p>worker ไล่เรนเดอร์ทีละชิ้น คลิปที่เสร็จจะมารอพร้อมแคปชันและลิงก์ปักตะกร้า</p>
+        </div>
+        <div class="topbar-actions">
+          <button class="btn btn-sm" id="btn-sync-stats" hidden>ดึงผลลัพธ์จาก Shopee</button>
+          <button class="btn btn-sm" id="btn-pause">หยุด worker</button>
+        </div>
+      </header>
+
+      <div class="kpis">
+        <div class="kpi"><div class="kpi-k">คลิปในคิว</div><div class="kpi-v" id="k-total">0</div></div>
+        <div class="kpi"><div class="kpi-k">กำลังเรนเดอร์</div><div class="kpi-v" id="k-run" style="color:var(--run)">0</div></div>
+        <div class="kpi"><div class="kpi-k">พร้อมอัป</div><div class="kpi-v" id="k-hold" style="color:var(--accent-2)">0</div></div>
+        <div class="kpi"><div class="kpi-k">อัปแล้ววันนี้</div><div class="kpi-v" id="k-done" style="color:var(--ok)">0</div></div>
+      </div>
+
+      <div class="split">
+        <div><div class="beat" style="margin-bottom:8px">คลิปต่อรอบเวลา</div><div class="slots" id="slot-chart"></div></div>
+        <div><div class="beat" style="margin-bottom:8px">คลิปต่อบัญชี</div><div class="slots" id="acc-chart"></div></div>
+      </div>
+
+      <div class="jobs" id="job-list"></div>
+    </section>
+
+    <!-- ======== VIDEOS ======== -->
+    <section class="view" id="view-videos" hidden>
+      <header class="topbar">
+        <div>
+          <h1>วิดีโอทั้งหมด</h1>
+          <p>ทุกคลิปที่เคยสร้าง ย้อนดูได้ว่าสินค้าไหนทำไปกี่คลิป ขนาดอะไร ลงบัญชีไหน และกำหนดอัปเมื่อไหร่</p>
+        </div>
+      </header>
+
+      <div class="kpis" id="earn-kpis" hidden>
+        <div class="kpi"><div class="kpi-k">ออเดอร์จากคลิป</div><div class="kpi-v" id="e-orders">0</div></div>
+        <div class="kpi"><div class="kpi-k">ค่าคอมฯ จากคลิป</div><div class="kpi-v" id="e-commission" style="color:var(--ok)">฿0</div></div>
+        <div class="kpi"><div class="kpi-k">คลิปที่ทำเงิน</div><div class="kpi-v" id="e-clips">0</div></div>
+        <div class="kpi"><div class="kpi-k">ดึงรายงานล่าสุด</div><div class="kpi-v" id="e-sync" style="font-size:14px">—</div></div>
+      </div>
+
+      <div class="filters">
+        <input class="search" id="vq" type="search" placeholder="ค้นหาชื่อสินค้า หรือรหัสคลิป" aria-label="ค้นหาวิดีโอ">
+        <button class="chip" data-vfilter="all" aria-pressed="true">ทั้งหมด</button>
+        <button class="chip" data-vfilter="hold" aria-pressed="false">พร้อมอัป</button>
+        <button class="chip" data-vfilter="done" aria-pressed="false">อัปแล้ว</button>
+        <button class="chip" data-vfilter="fail" aria-pressed="false">ล้มเหลว</button>
+        <button class="chip" id="vsort" aria-pressed="false" style="margin-left:auto">เรียงตาม: สร้างล่าสุด</button>
+      </div>
+
+      <div class="table-wrap">
+        <table class="vids">
+          <thead><tr>
+            <th>คลิป</th><th>สินค้า</th><th>บัญชี</th><th>รูปแบบ</th>
+            <th>ขนาด</th><th>ยาว</th><th>สร้างเมื่อ</th><th>กำหนดอัป</th>
+            <th>ออเดอร์</th><th>ค่าคอมฯ</th><th>สถานะ</th>
+          </tr></thead>
+          <tbody id="vid-rows"></tbody>
+        </table>
+      </div>
+      <p id="vid-summary" style="margin:12px 0 0;font-size:12px;color:var(--fg-mute)"></p>
+    </section>
+
+    <!-- ======== LOG ======== -->
+    <section class="view" id="view-log" hidden>
+      <header class="topbar">
+        <div>
+          <h1>Log</h1>
+          <p>เหตุการณ์ของ worker เรียงจากใหม่ไปเก่า ใช้ไล่ย้อนตอนคลิปล้มเหลว</p>
+        </div>
+        <div class="topbar-actions"><button class="btn btn-sm" id="btn-clearlog">ล้าง log</button></div>
+      </header>
+      <div class="log" id="log-list"></div>
+    </section>
+
+    <!-- ======== CAST ======== -->
+    <section class="view" id="view-cast" hidden>
+      <header class="topbar">
+        <div>
+          <h1>ตัวละคร</h1>
+          <p>ภาพบุคคลที่ AI จะใช้เป็นคนถือหรือใส่สินค้าในคลิป</p>
+        </div>
+      </header>
+      <div class="note">
+        ใช้ได้เฉพาะภาพที่คุณมีสิทธิ์ — รูปตัวเอง นายแบบที่จ้าง หรือภาพที่ซื้อสิทธิ์มา<br>
+        <b>อย่าอัปโหลดรูปคนอื่นโดยไม่ได้รับอนุญาต</b> Shopee ถอดคลิปและระงับสิทธิ์ affiliate จากเรื่องนี้โดยตรง
+      </div>
+      <div class="rows" id="cast-list" style="margin-bottom:12px"></div>
+      <div class="dropzone">ลากรูปมาวาง หรือกดเพื่อเลือกไฟล์ · JPG/PNG ด้านละอย่างน้อย 1024px</div>
+    </section>
+
+    <!-- ======== ACCOUNT ======== -->
+    <section class="view" id="view-account" hidden>
+      <header class="topbar">
+        <div>
+          <h1>Affiliate</h1>
+          <p>บัญชี Shopee ที่เชื่อมไว้ · เพดานต่อวันแก้ตัวเลขได้ ใส่ 0 เพื่อปลดเพดาน</p>
+        </div>
+      </header>
+
+      <div class="beat" style="margin-bottom:8px">4 ขั้นของท่อ · ขั้นไหนอัตโนมัติได้จริง</div>
+      <div class="steps">
+        <div class="step"><div class="step-n">1</div><div><h4>ดึงสินค้าจาก Showcase</h4><p>Affiliate Open API ด้วย App ID ของคุณ</p></div><span class="status s-done">อัตโนมัติ</span></div>
+        <div class="step"><div class="step-n">2</div><div><h4>สคริปต์ เสียงพากย์ คลิป แคปชัน</h4><p>ทำในเครื่องคุณเอง ไม่ต้องยุ่งกับ Shopee</p></div><span class="status s-done">อัตโนมัติ</span></div>
+        <div class="step"><div class="step-n">3</div><div><h4>สร้างลิงก์ปักตะกร้าต่อบัญชี</h4><p>ย่อลิงก์แยก sub-id เพื่อแยกยอดค่าคอมฯ</p></div><span class="status s-done">อัตโนมัติ</span></div>
+        <div class="step"><div class="step-n">4</div><div><h4>อัปขึ้น Shopee Video</h4><p>ไม่มี public API · ระบบเตรียมไฟล์ แคปชัน ลิงก์ให้พร้อม</p></div><span class="status s-hold">กดเอง</span></div>
+      </div>
+
+      <div class="note">
+        <b>เพดานต่อวันเป็นค่าที่ตั้งเอง ไม่ใช่ตัวเลขทางการของ Shopee</b><br>
+        Shopee ไม่ได้ประกาศจำนวนคลิปสูงสุดต่อวันไว้ แต่เงื่อนไข affiliate ห้ามคอนเทนต์ซ้ำซากและสแปม ค่าตั้งต้นด้านล่างเป็นค่าอนุรักษ์นิยม ปรับตามที่หน้างานเจอจริงได้
+      </div>
+
+      <div class="rows" id="account-list"></div>
+    </section>
+
+    <!-- ======== SETTINGS ======== -->
+    <section class="view" id="view-settings" hidden>
+      <header class="topbar">
+        <div>
+          <h1>Settings</h1>
+          <p>ค่าที่ใช้ตอนเรนเดอร์ · มีผลกับทุกคลิปที่สร้างหลังจากนี้</p>
+        </div>
+      </header>
+
+      <div class="note">
+        <b>ในเวอร์ชันจริง ค่าลับต้องอยู่ที่ backend ไม่ใช่ในเบราว์เซอร์</b><br>
+        App Secret และ Access Token ต้องเก็บใน <code class="num">.env</code> ฝั่งเซิร์ฟเวอร์ แล้วให้หน้าเว็บเรียกผ่าน API ของคุณเอง ช่องด้านล่างเป็นของ POC — กรอกแล้วเก็บไว้ในเครื่องนี้เท่านั้น และ <b>ไม่บันทึก Secret ลง storage</b>
+      </div>
+
+      <div class="panels">
+        <div class="panel" style="grid-column:1/-1">
+          <div class="panel-head">เชื่อมต่อ Shopee Affiliate</div>
+          <div class="panel-body">
+            <div class="ctl-2">
+              <div class="ctl">
+                <label for="s-appid">App ID</label>
+                <input class="input" id="s-appid" type="text" inputmode="numeric" placeholder="เช่น 2007xxxxxx" autocomplete="off">
+                <div class="ctl-hint">ได้จาก Shopee Open Platform &gt; My Apps</div>
+              </div>
+              <div class="ctl">
+                <label for="s-secret">App Secret</label>
+                <input class="input" id="s-secret" type="password" placeholder="วางค่าจากหน้า App" autocomplete="off">
+                <div class="ctl-hint">ไม่ถูกบันทึกไว้ · หายเมื่อปิดหน้า</div>
+              </div>
+            </div>
+
+            <div class="ctl-2">
+              <div class="ctl">
+                <label for="s-affid">Affiliate ID</label>
+                <input class="input" id="s-affid" type="text" placeholder="เช่น 15xxxxxxx" autocomplete="off">
+              </div>
+              <div class="ctl">
+                <label for="s-shop">ชื่อร้าน / Shop ID</label>
+                <input class="input" id="s-shop" type="text" value="ร้านดีดีช้อป" autocomplete="off">
+              </div>
+            </div>
+
+            <div class="ctl-2">
+              <div class="ctl">
+                <label for="s-subprefix">Sub-ID นำหน้า</label>
+                <input class="input" id="s-subprefix" type="text" value="sub" autocomplete="off">
+                <div class="ctl-hint">ใช้ต่อท้ายด้วยชื่อบัญชี เช่น <code class="num">sub_main</code> เพื่อแยกยอดค่าคอมฯ</div>
+              </div>
+              <div class="ctl">
+                <label for="s-region">ภูมิภาค</label>
+                <select class="input" id="s-region">
+                  <option value="TH">ไทย (TH) · บาท</option>
+                  <option value="MY">มาเลเซีย (MY)</option>
+                  <option value="SG">สิงคโปร์ (SG)</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="ctl">
+              <label for="s-redirect">Endpoint ที่ระบบเรียก</label>
+              <div style="display:flex;gap:7px">
+                <input class="input" id="s-redirect" type="text" readonly value="https://open-api.affiliate.shopee.th/graphql">
+                <button class="btn btn-sm" type="button" id="copy-redirect">คัดลอก</button>
+              </div>
+              <div class="ctl-hint">GraphQL ตัวเดียว ยืนยันตัวตนด้วยลายเซ็น <code class="num">SHA256(AppID + Timestamp + Body + Secret)</code> ไม่ใช่ OAuth จึงไม่ต้องตั้ง redirect</div>
+            </div>
+
+            <div class="row" style="padding:11px 13px">
+              <div class="row-main">
+                <h3 style="font-size:12.5px">สถานะการเชื่อมต่อ</h3>
+                <p id="conn-note">ยังไม่ได้ทดสอบ · กรอก App ID และ Secret แล้วกดทดสอบ</p>
+              </div>
+              <span class="status s-wait" id="conn-status">ยังไม่เชื่อม</span>
+              <button class="btn btn-sm" type="button" id="btn-test">ทดสอบการเชื่อมต่อ</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">การเรนเดอร์</div>
+          <div class="panel-body">
+            <div class="ctl">
+              <label for="s-workers">จำนวน worker พร้อมกัน</label>
+              <select class="input" id="s-workers">
+                <option>1 · ปลอดภัยสุด</option>
+                <option>2</option>
+                <option>4 · ใช้ CPU เต็ม</option>
+              </select>
+              <div class="ctl-hint">ffmpeg กิน CPU เต็มคอร์ ตั้งเกินจำนวนคอร์แล้วไม่เร็วขึ้น</div>
+            </div>
+            <div class="ctl">
+              <label for="s-rate">ความเร็วเสียงพากย์</label>
+              <select class="input" id="s-rate">
+                <option>+0% · ปกติ</option>
+                <option selected>+8% · กระชับ</option>
+                <option>+15% · เร็ว</option>
+              </select>
+            </div>
+            <div class="ctl">
+              <label for="s-crf">คุณภาพวิดีโอ (CRF)</label>
+              <select class="input" id="s-crf">
+                <option>18 · ไฟล์ใหญ่ คมสุด</option>
+                <option selected>20 · สมดุล</option>
+                <option>24 · ไฟล์เล็ก</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">เสียงพากย์</div>
+          <div class="panel-body">
+            <div class="ctl">
+              <label for="s-tts">ผู้ให้บริการ TTS</label>
+              <select class="input" id="s-tts">
+                <option>edge-tts · ฟรี ไม่เสถียร</option>
+                <option>Google Cloud TTS · มี SLA</option>
+                <option>Botnoi Voice · เสียงไทย</option>
+              </select>
+              <div class="ctl-hint">edge-tts หลุดเป็นช่วง ๆ ระบบจะ retry ให้สูงสุด 6 ครั้ง</div>
+            </div>
+            <div class="switch-row">
+              <div class="t"><b>เขียนสคริปต์ด้วย Claude</b><small>แทน template สุ่ม hook · ต้องมี API key</small></div>
+              <button class="switch" type="button" role="switch" aria-checked="false" id="s-llm" aria-label="เขียนสคริปต์ด้วย Claude"></button>
+            </div>
+            <div class="switch-row">
+              <div class="t"><b>เก็บไฟล์ชั่วคราวไว้</b><small>ไว้ไล่ดูตอน debug · กินพื้นที่</small></div>
+              <button class="switch" type="button" role="switch" aria-checked="false" id="s-keep" aria-label="เก็บไฟล์ชั่วคราว"></button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ---------------- data ---------------- */
+  const PRODUCTS = [
+    { id: "P-1042", name: "หูฟังบลูทูธ TWS รุ่น Pro Max", price: 399, was: 890, com: 12, sold: 1240, hue: 214, free: true, shots: 6,
+      bullets: ["เสียงเบสหนักแน่น ตัดเสียงรบกวนรอบข้าง", "แบตอึด ฟังต่อเนื่อง 8 ชั่วโมง", "กันเหงื่อ IPX5 ใส่วิ่งได้สบาย"] },
+    { id: "P-0871", name: "ครีมกันแดด SPF50+ PA++++", price: 249, was: 420, com: 20, sold: 3180, hue: 28, free: true, shots: 5,
+      bullets: ["เนื้อบางเบา ไม่วอกไม่เหนียว", "กันน้ำกันเหงื่อ อยู่ได้ทั้งวัน", "ทาแล้วแต่งหน้าต่อได้เลย"] },
+    { id: "P-0520", name: "ไฟ LED ติดห้อง RGB ยาว 5 เมตร", price: 129, was: 299, com: 18, sold: 2470, hue: 282, free: false, shots: 4,
+      bullets: ["เปลี่ยนสีได้ 16 ล้านสี ผ่านแอป", "มีกาวสองหน้าในตัว ติดเองได้", "ตัดสายสั้นได้ตามมุมห้อง"] },
+    { id: "P-1190", name: "ที่ชาร์จเร็ว 65W GaN 3 ช่อง", price: 359, was: 690, com: 13, sold: 860, hue: 196, free: true, shots: 4,
+      bullets: ["ชาร์จโน้ตบุ๊กกับมือถือพร้อมกันได้", "ตัวเล็กกว่าอะแดปเตอร์เดิมครึ่งหนึ่ง", "มีระบบตัดไฟเมื่อร้อนเกิน"] },
+    { id: "P-0333", name: "ขวดน้ำเก็บความเย็น 1 ลิตร", price: 189, was: 350, com: 15, sold: 1930, hue: 168, free: false, shots: 5,
+      bullets: ["เก็บเย็นได้ 18 ชั่วโมง", "สเตนเลสสองชั้น ไม่มีเหงื่อขวด", "ฝาเกลียวแน่น ไม่หกในกระเป๋า"] },
+    { id: "P-0744", name: "หม้อหุงข้าวมินิ 1.2 ลิตร", price: 690, was: 1190, com: 14, sold: 540, hue: 10, free: true, shots: 6,
+      bullets: ["หุงได้ 2-3 คน พอดีหอพัก", "นึ่งผักนึ่งไข่ไปพร้อมกันได้", "หม้อในเคลือบไม่ติด ล้างง่าย"] },
+    { id: "P-0612", name: "กระเป๋าสะพายข้างผ้าแคนวาส", price: 219, was: 390, com: 11, sold: 1120, hue: 42, free: false, shots: 4,
+      bullets: ["ใส่โน้ตบุ๊ก 14 นิ้วได้พอดี", "ผ้าหนา ทรงไม่ย้วย", "มีช่องซิปด้านในกันของหาย"] },
+    { id: "P-0298", name: "ที่หนีบผมไร้สาย พกพาได้", price: 490, was: 890, com: 10, sold: 780, hue: 330, free: true, shots: 3,
+      bullets: ["ชาร์จครั้งเดียวใช้ได้ 40 นาที", "ร้อนถึงอุณหภูมิใช้งานใน 30 วินาที", "พับเก็บใส่กระเป๋าถือได้"] },
+    { id: "P-0455", name: "เสื้อยืดโอเวอร์ไซส์ Cotton 100%", price: 159, was: 290, com: 9, sold: 4210, hue: 120, free: false, shots: 5,
+      bullets: ["ผ้าคอตตอนแท้ ใส่แล้วไม่ร้อน", "ทรงหลวมกำลังดี ไม่โป่ง", "ซักแล้วไม่ย้วยไม่หด"] },
+    { id: "P-0109", name: "เคสมือถือกันกระแทก แบบใส", price: 59, was: 150, com: 8, sold: 6350, hue: 200, free: false, shots: 3,
+      bullets: ["ขอบยกสูงกันกล้องกันจอ", "เนื้อใสไม่เหลืองง่าย", "มีรุ่นให้เลือกเกือบทุกยี่ห้อ"] },
+    { id: "P-0877", name: "ถุงเท้าข้อสั้น แพ็ค 5 คู่", price: 99, was: 180, com: 10, sold: 2890, hue: 250, free: false, shots: 3,
+      bullets: ["ผ้าหนานุ่ม ไม่รัดข้อเท้า", "ได้ 5 คู่ 5 สีในแพ็คเดียว", "พื้นหนาพิเศษ ใส่เดินนาน ๆ ได้"] },
+    { id: "P-0666", name: "แปรงทำความสะอาดอเนกประสงค์", price: 45, was: 99, com: 7, sold: 5110, hue: 95, free: false, shots: 3,
+      bullets: ["ขนแปรงแข็งพอ ขัดร่องยาแนวได้", "ด้ามยาว ไม่ต้องก้ม", "ราคาไม่ถึงห้าสิบ ซื้อติดบ้านไว้"] },
+  ];
+
+  const CAST = [
+    { name: "พี่หมี รีวิวของถูก", note: "ชายวัย 30 ลุคสบาย ๆ · เหมาะกับของใช้ในบ้าน เครื่องใช้ไฟฟ้า", hue: 214, clips: 48 },
+    { name: "น้องมายด์ สายบิวตี้", note: "หญิงวัย 24 แต่งหน้าสว่าง · เหมาะกับสกินแคร์ เครื่องสำอาง", hue: 330, clips: 61 },
+    { name: "โค้ชแบงค์ สายฟิต", note: "ชายวัย 28 ชุดออกกำลังกาย · เหมาะกับของกีฬา อาหารเสริม", hue: 160, clips: 22 },
+    { name: "ไม่ใช้ตัวละคร", note: "ใช้ภาพสินค้าล้วน · เรนเดอร์เร็วกว่าประมาณ 40%", hue: 40, clips: 134 },
+  ];
+
+  const ACCOUNTS = [
+    { id: "A1", handle: "@deedeeshop",   sub: "sub_main",  cap: 5, used: 2, hue: 20 },
+    { id: "A2", handle: "@deedee.clips", sub: "sub_clip",  cap: 4, used: 1, hue: 200 },
+    { id: "A3", handle: "@ของถูกบอกต่อ", sub: "sub_cheap", cap: 4, used: 4, hue: 280 },
+  ];
+
+  const FORMATS = [
+    { id: "quick", name: "รีวิวสั้น",  sec: 16, target: 16, note: "ภาพสินค้า 3-4 รูป ตัดเร็ว" },
+    { id: "show",  name: "โชว์สินค้า", sec: 24, target: 24, note: "ตัวละครถือสินค้า เห็นรอบด้าน" },
+    { id: "story", name: "เล่าเรื่อง", sec: 42, target: 42, note: "ปัญหา → ทางแก้ → ปิดการขาย" },
+  ];
+
+  const ASPECTS = [
+    { id: "9:16", w: 1080, h: 1920, note: "แนวตั้ง · Shopee Video เต็มจอ" },
+    { id: "4:5",  w: 1080, h: 1350, note: "แนวตั้งสั้น · ฟีดสินค้า" },
+    { id: "1:1",  w: 1080, h: 1080, note: "จัตุรัส · ใช้ซ้ำที่อื่นได้" },
+  ];
+
+  const HOOKS = [
+    "บอกเลยว่าของมันต้องมี {name} ลดเหลือ {price} บาท",
+    "ใครกำลังหา {name} อยู่ หยุดก่อน ตัวนี้เหลือ {price} บาทเท่านั้น",
+    "เจอแล้วตัวคุ้มสุดในราคา {price} บาท {name}",
+    "ราคานี้ไม่น่าเชื่อ {name} เหลือแค่ {price} บาท",
+  ];
+  const STORY_OPENERS = [
+    "เมื่อก่อนเจอปัญหานี้ทุกวันจนเลิกใช้ของเดิมไปเลย",
+    "ซื้อมาสามตัวก่อนหน้านี้ พังหมด จนมาเจอตัวนี้",
+  ];
+  const CLOSINGS = ["ของดีราคานี้หมดเร็วแน่นอน", "เหลือไม่เยอะแล้วนะ", "ลองแล้วจะติดใจ"];
+  const CTA = "กดตะกร้าส้มใต้คลิปเลย";
+  // Seller-voice filler, used only when the target length needs more to say.
+  const EXTRAS = [
+    "ตอนแรกลังเลเพราะราคาถูกกว่าเจ้าอื่นเยอะ แต่ลองแล้วไม่ผิดหวัง",
+    "ใช้มาสองอาทิตย์แล้ว ยังดีเหมือนวันแรก",
+    "รีวิวในร้านก็บอกตรงกันว่าคุ้มเกินราคา",
+    "ร้านมีโค้ดลดเพิ่ม กดรับที่หน้าสินค้าได้เลย",
+    "ของส่งจากในไทย ไม่ต้องรอนาน",
+    "ซื้อไปฝากที่บ้านอีกชิ้น เขาก็ชอบเหมือนกัน",
+    "ราคาเท่านี้ซื้อติดไว้ก่อนได้เลย ไม่ต้องคิดเยอะ",
+    "ตอนนั้นหาข้อมูลอยู่หลายวัน เทียบมาหลายร้านมากกว่าจะตัดสินใจ",
+    "พอได้ลองของจริงถึงรู้ว่าต่างจากของเดิมชัดเจน",
+    "เพื่อนเห็นแล้วถามว่าซื้อจากไหน เลยต้องมารีวิวให้ดูกัน",
+    "ถ้าย้อนกลับไปได้ก็คงซื้อตัวนี้ตั้งแต่แรก ไม่ต้องเสียเงินหลายรอบ",
+  ];
+  const SLOTS = ["11:30", "17:00", "19:30", "21:00"];
+
+  // Real Thai voiceovers rendered by tools/make_preview_audio.py. The cue times
+  // are measured from the actual mp3s, not estimated, so captions land on the word.
+  const PREVIEW_AUDIO = {"P-1042_quick":{"src":"assets/pv_P-1042_quick.mp3","duration":15.99,"target":16,"sizeKB":188,"lines":["ราคานี้ไม่น่าเชื่อ หูฟังบลูทูธ TWS รุ่น Pro Max เหลือแค่ 399 บาท","จากปกติ 890 บาท ลดมาเกินครึ่ง","เสียงเบสหนักแน่น ตัดเสียงรบกวนรอบข้าง","แบตอึด ฟังต่อเนื่อง 8 ชั่วโมง","เหลือไม่เยอะแล้วนะ","กดตะกร้าส้มใต้คลิปเลย ส่งฟรีมีเก็บปลายทาง"],"cues":[{"t":0,"e":1.28,"text":"ราคานี้ไม่น่าเชื่อ"},{"t":1.28,"e":3.26,"text":"หูฟังบลูทูธ TWS รุ่น Pro Max"},{"t":3.26,"e":4.4,"text":"เหลือแค่ 399 บาท"},{"t":4.68,"e":6.11,"text":"จากปกติ 890 บาท"},{"t":6.11,"e":7.36,"text":"ลดมาเกินครึ่ง"},{"t":7.64,"e":8.6,"text":"เสียงเบสหนักแน่น"},{"t":8.6,"e":9.81,"text":"ตัดเสียงรบกวนรอบข้าง"},{"t":10.09,"e":11.43,"text":"แบตอึด ฟังต่อเนื่อง 8"},{"t":11.43,"e":11.87,"text":"ชั่วโมง"},{"t":12.15,"e":13.12,"text":"เหลือไม่เยอะแล้วนะ"},{"t":13.4,"e":14.76,"text":"กดตะกร้าส้มใต้คลิปเลย"},{"t":14.76,"e":15.99,"text":"ส่งฟรีมีเก็บปลายทาง"}],"video":{"9:16":{"src":"assets/pv_P-1042_quick.mp4","w":720,"h":1280,"sizeKB":526},"4:5":{"src":"assets/pv_P-1042_quick_4x5.mp4","w":720,"h":900,"sizeKB":500},"1:1":{"src":"assets/pv_P-1042_quick_1x1.mp4","w":720,"h":720,"sizeKB":471}}},"P-1042_show":{"src":"assets/pv_P-1042_show.mp3","duration":24.28,"target":24,"sizeKB":286,"lines":["ราคานี้ไม่น่าเชื่อ หูฟังบลูทูธ TWS รุ่น Pro Max เหลือแค่ 399 บาท","จากปกติ 890 บาท ลดมาเกินครึ่ง","เสียงเบสหนักแน่น ตัดเสียงรบกวนรอบข้าง","แบตอึด ฟังต่อเนื่อง 8 ชั่วโมง","กันเหงื่อ IPX5 ใส่วิ่งได้สบาย","ตอนแรกลังเลเพราะราคาถูกกว่าเจ้าอื่นเยอะ แต่ลองแล้วไม่ผิดหวัง","ใช้มาสองอาทิตย์แล้ว ยังดีเหมือนวันแรก","เหลือไม่เยอะแล้วนะ","กดตะกร้าส้มใต้คลิปเลย ส่งฟรีมีเก็บปลายทาง"],"cues":[{"t":0,"e":1.28,"text":"ราคานี้ไม่น่าเชื่อ"},{"t":1.28,"e":3.26,"text":"หูฟังบลูทูธ TWS รุ่น Pro Max"},{"t":3.26,"e":4.4,"text":"เหลือแค่ 399 บาท"},{"t":4.68,"e":6.11,"text":"จากปกติ 890 บาท"},{"t":6.11,"e":7.36,"text":"ลดมาเกินครึ่ง"},{"t":7.64,"e":8.6,"text":"เสียงเบสหนักแน่น"},{"t":8.6,"e":9.81,"text":"ตัดเสียงรบกวนรอบข้าง"},{"t":10.09,"e":11.43,"text":"แบตอึด ฟังต่อเนื่อง 8"},{"t":11.43,"e":11.87,"text":"ชั่วโมง"},{"t":12.15,"e":13.13,"text":"กันเหงื่อ IPX5"},{"t":13.13,"e":14.11,"text":"ใส่วิ่งได้สบาย"},{"t":14.39,"e":16.03,"text":"ตอนแรกลังเลเพราะราคาถูกกว่าเ"},{"t":16.03,"e":16.67,"text":"จ้าอื่นเยอะ"},{"t":16.67,"e":17.84,"text":"แต่ลองแล้วไม่ผิดหวัง"},{"t":18.12,"e":19.2,"text":"ใช้มาสองอาทิตย์แล้ว"},{"t":19.2,"e":20.17,"text":"ยังดีเหมือนวันแรก"},{"t":20.45,"e":21.41,"text":"เหลือไม่เยอะแล้วนะ"},{"t":21.69,"e":23.05,"text":"กดตะกร้าส้มใต้คลิปเลย"},{"t":23.05,"e":24.28,"text":"ส่งฟรีมีเก็บปลายทาง"}],"video":{"9:16":{"src":"assets/pv_P-1042_show.mp4","w":720,"h":1280,"sizeKB":775},"4:5":{"src":"assets/pv_P-1042_show_4x5.mp4","w":720,"h":900,"sizeKB":745},"1:1":{"src":"assets/pv_P-1042_show_1x1.mp4","w":720,"h":720,"sizeKB":709}}},"P-1042_story":{"src":"assets/pv_P-1042_story.mp3","duration":43.11,"target":42,"sizeKB":506,"lines":["เมื่อก่อนเจอปัญหานี้ทุกวันจนเลิกใช้ของเดิมไปเลย","ราคานี้ไม่น่าเชื่อ หูฟังบลูทูธ TWS รุ่น Pro Max เหลือแค่ 399 บาท","จากปกติ 890 บาท ลดมาเกินครึ่ง","เสียงเบสหนักแน่น ตัดเสียงรบกวนรอบข้าง","แบตอึด ฟังต่อเนื่อง 8 ชั่วโมง","กันเหงื่อ IPX5 ใส่วิ่งได้สบาย","ตอนแรกลังเลเพราะราคาถูกกว่าเจ้าอื่นเยอะ แต่ลองแล้วไม่ผิดหวัง","ใช้มาสองอาทิตย์แล้ว ยังดีเหมือนวันแรก","รีวิวในร้านก็บอกตรงกันว่าคุ้มเกินราคา","ร้านมีโค้ดลดเพิ่ม กดรับที่หน้าสินค้าได้เลย","ของส่งจากในไทย ไม่ต้องรอนาน","ซื้อไปฝากที่บ้านอีกชิ้น เขาก็ชอบเหมือนกัน","ราคาเท่านี้ซื้อติดไว้ก่อนได้เลย ไม่ต้องคิดเยอะ","พอได้ลองของจริงถึงรู้ว่าต่างจากของเดิมชัดเจน","เหลือไม่เยอะแล้วนะ","กดตะกร้าส้มใต้คลิปเลย ส่งฟรีมีเก็บปลายทาง"],"cues":[{"t":0,"e":1.58,"text":"เมื่อก่อนเจอปัญหานี้ทุกวันจน"},{"t":1.58,"e":2.66,"text":"เลิกใช้ของเดิมไปเลย"},{"t":2.94,"e":4.21,"text":"ราคานี้ไม่น่าเชื่อ"},{"t":4.21,"e":6.2,"text":"หูฟังบลูทูธ TWS รุ่น Pro Max"},{"t":6.2,"e":7.33,"text":"เหลือแค่ 399 บาท"},{"t":7.61,"e":9.05,"text":"จากปกติ 890 บาท"},{"t":9.05,"e":10.29,"text":"ลดมาเกินครึ่ง"},{"t":10.57,"e":11.54,"text":"เสียงเบสหนักแน่น"},{"t":11.54,"e":12.74,"text":"ตัดเสียงรบกวนรอบข้าง"},{"t":13.02,"e":14.36,"text":"แบตอึด ฟังต่อเนื่อง 8"},{"t":14.36,"e":14.81,"text":"ชั่วโมง"},{"t":15.09,"e":16.07,"text":"กันเหงื่อ IPX5"},{"t":16.07,"e":17.05,"text":"ใส่วิ่งได้สบาย"},{"t":17.33,"e":18.97,"text":"ตอนแรกลังเลเพราะราคาถูกกว่าเ"},{"t":18.97,"e":19.61,"text":"จ้าอื่นเยอะ"},{"t":19.61,"e":20.78,"text":"แต่ลองแล้วไม่ผิดหวัง"},{"t":21.06,"e":22.14,"text":"ใช้มาสองอาทิตย์แล้ว"},{"t":22.14,"e":23.1,"text":"ยังดีเหมือนวันแรก"},{"t":23.38,"e":25.25,"text":"รีวิวในร้านก็บอกตรงกันว่าคุ้"},{"t":25.25,"e":25.85,"text":"มเกินราคา"},{"t":26.13,"e":27.14,"text":"ร้านมีโค้ดลดเพิ่ม"},{"t":27.14,"e":28.56,"text":"กดรับที่หน้าสินค้าได้เลย"},{"t":28.84,"e":30.65,"text":"ของส่งจากในไทย ไม่ต้องรอนาน"},{"t":30.93,"e":32.32,"text":"ซื้อไปฝากที่บ้านอีกชิ้น"},{"t":32.32,"e":33.35,"text":"เขาก็ชอบเหมือนกัน"},{"t":33.63,"e":35.11,"text":"ราคาเท่านี้ซื้อติดไว้ก่อนได้"},{"t":35.11,"e":36.07,"text":"เลย ไม่ต้องคิดเยอะ"},{"t":36.35,"e":38.03,"text":"พอได้ลองของจริงถึงรู้ว่าต่าง"},{"t":38.03,"e":38.99,"text":"จากของเดิมชัดเจน"},{"t":39.27,"e":40.24,"text":"เหลือไม่เยอะแล้วนะ"},{"t":40.52,"e":41.88,"text":"กดตะกร้าส้มใต้คลิปเลย"},{"t":41.88,"e":43.11,"text":"ส่งฟรีมีเก็บปลายทาง"}],"video":{"9:16":{"src":"assets/pv_P-1042_story.mp4","w":720,"h":1280,"sizeKB":1410},"4:5":{"src":"assets/pv_P-1042_story_4x5.mp4","w":720,"h":900,"sizeKB":1365},"1:1":{"src":"assets/pv_P-1042_story_1x1.mp4","w":720,"h":720,"sizeKB":1298}}},"P-0871_quick":{"src":"assets/pv_P-0871_quick.mp3","duration":16.19,"target":16,"sizeKB":191,"lines":["ราคานี้ไม่น่าเชื่อ ครีมกันแดด SPF50+ PA++++ เหลือแค่ 249 บาท","จากปกติ 420 บาท ลดมาเกินครึ่ง","เนื้อบางเบา ไม่วอกไม่เหนียว","กันน้ำกันเหงื่อ อยู่ได้ทั้งวัน","ทาแล้วแต่งหน้าต่อได้เลย","เหลือไม่เยอะแล้วนะ","กดตะกร้าส้มใต้คลิปเลย ส่งฟรีมีเก็บปลายทาง"],"cues":[{"t":0,"e":1.25,"text":"ราคานี้ไม่น่าเชื่อ"},{"t":1.25,"e":2.92,"text":"ครีมกันแดด SPF50+ PA++++"},{"t":2.92,"e":4.04,"text":"เหลือแค่ 249 บาท"},{"t":4.32,"e":5.69,"text":"จากปกติ 420 บาท"},{"t":5.69,"e":6.89,"text":"ลดมาเกินครึ่ง"},{"t":7.17,"e":8.66,"text":"เนื้อบางเบา ไม่วอกไม่เหนียว"},{"t":8.94,"e":9.69,"text":"กันน้ำกันเหงื่อ"},{"t":9.69,"e":10.38,"text":"อยู่ได้ทั้งวัน"},{"t":10.66,"e":12.07,"text":"ทาแล้วแต่งหน้าต่อได้เลย"},{"t":12.35,"e":13.32,"text":"เหลือไม่เยอะแล้วนะ"},{"t":13.6,"e":14.96,"text":"กดตะกร้าส้มใต้คลิปเลย"},{"t":14.96,"e":16.19,"text":"ส่งฟรีมีเก็บปลายทาง"}],"video":{"9:16":{"src":"assets/pv_P-0871_quick.mp4","w":720,"h":1280,"sizeKB":524}}},"P-0871_show":{"src":"assets/pv_P-0871_show.mp3","duration":24.99,"target":24,"sizeKB":294,"lines":["ราคานี้ไม่น่าเชื่อ ครีมกันแดด SPF50+ PA++++ เหลือแค่ 249 บาท","จากปกติ 420 บาท ลดมาเกินครึ่ง","เนื้อบางเบา ไม่วอกไม่เหนียว","กันน้ำกันเหงื่อ อยู่ได้ทั้งวัน","ทาแล้วแต่งหน้าต่อได้เลย","ตอนแรกลังเลเพราะราคาถูกกว่าเจ้าอื่นเยอะ แต่ลองแล้วไม่ผิดหวัง","ใช้มาสองอาทิตย์แล้ว ยังดีเหมือนวันแรก","รีวิวในร้านก็บอกตรงกันว่าคุ้มเกินราคา","เหลือไม่เยอะแล้วนะ","กดตะกร้าส้มใต้คลิปเลย ส่งฟรีมีเก็บปลายทาง"],"cues":[{"t":0,"e":1.25,"text":"ราคานี้ไม่น่าเชื่อ"},{"t":1.25,"e":2.92,"text":"ครีมกันแดด SPF50+ PA++++"},{"t":2.92,"e":4.04,"text":"เหลือแค่ 249 บาท"},{"t":4.32,"e":5.69,"text":"จากปกติ 420 บาท"},{"t":5.69,"e":6.89,"text":"ลดมาเกินครึ่ง"},{"t":7.17,"e":8.66,"text":"เนื้อบางเบา ไม่วอกไม่เหนียว"},{"t":8.94,"e":9.69,"text":"กันน้ำกันเหงื่อ"},{"t":9.69,"e":10.38,"text":"อยู่ได้ทั้งวัน"},{"t":10.66,"e":12.07,"text":"ทาแล้วแต่งหน้าต่อได้เลย"},{"t":12.35,"e":13.99,"text":"ตอนแรกลังเลเพราะราคาถูกกว่าเ"},{"t":13.99,"e":14.63,"text":"จ้าอื่นเยอะ"},{"t":14.63,"e":15.8,"text":"แต่ลองแล้วไม่ผิดหวัง"},{"t":16.08,"e":17.16,"text":"ใช้มาสองอาทิตย์แล้ว"},{"t":17.16,"e":18.12,"text":"ยังดีเหมือนวันแรก"},{"t":18.4,"e":20.27,"text":"รีวิวในร้านก็บอกตรงกันว่าคุ้"},{"t":20.27,"e":20.87,"text":"มเกินราคา"},{"t":21.15,"e":22.12,"text":"เหลือไม่เยอะแล้วนะ"},{"t":22.4,"e":23.76,"text":"กดตะกร้าส้มใต้คลิปเลย"},{"t":23.76,"e":24.99,"text":"ส่งฟรีมีเก็บปลายทาง"}],"video":{"9:16":{"src":"assets/pv_P-0871_show.mp4","w":720,"h":1280,"sizeKB":810}}},"P-0871_story":{"src":"assets/pv_P-0871_story.mp3","duration":41.56,"target":42,"sizeKB":488,"lines":["เมื่อก่อนเจอปัญหานี้ทุกวันจนเลิกใช้ของเดิมไปเลย","ราคานี้ไม่น่าเชื่อ ครีมกันแดด SPF50+ PA++++ เหลือแค่ 249 บาท","จากปกติ 420 บาท ลดมาเกินครึ่ง","เนื้อบางเบา ไม่วอกไม่เหนียว","กันน้ำกันเหงื่อ อยู่ได้ทั้งวัน","ทาแล้วแต่งหน้าต่อได้เลย","ตอนแรกลังเลเพราะราคาถูกกว่าเจ้าอื่นเยอะ แต่ลองแล้วไม่ผิดหวัง","ใช้มาสองอาทิตย์แล้ว ยังดีเหมือนวันแรก","รีวิวในร้านก็บอกตรงกันว่าคุ้มเกินราคา","ร้านมีโค้ดลดเพิ่ม กดรับที่หน้าสินค้าได้เลย","ของส่งจากในไทย ไม่ต้องรอนาน","ซื้อไปฝากที่บ้านอีกชิ้น เขาก็ชอบเหมือนกัน","ราคาเท่านี้ซื้อติดไว้ก่อนได้เลย ไม่ต้องคิดเยอะ","ตอนนั้นหาข้อมูลอยู่หลายวัน เทียบมาหลายร้านมากกว่าจะตัดสินใจ","เหลือไม่เยอะแล้วนะ","กดตะกร้าส้มใต้คลิปเลย ส่งฟรีมีเก็บปลายทาง"],"cues":[{"t":0,"e":1.58,"text":"เมื่อก่อนเจอปัญหานี้ทุกวันจน"},{"t":1.58,"e":2.66,"text":"เลิกใช้ของเดิมไปเลย"},{"t":2.94,"e":4.19,"text":"ราคานี้ไม่น่าเชื่อ"},{"t":4.19,"e":5.86,"text":"ครีมกันแดด SPF50+ PA++++"},{"t":5.86,"e":6.97,"text":"เหลือแค่ 249 บาท"},{"t":7.25,"e":8.63,"text":"จากปกติ 420 บาท"},{"t":8.63,"e":9.82,"text":"ลดมาเกินครึ่ง"},{"t":10.11,"e":11.59,"text":"เนื้อบางเบา ไม่วอกไม่เหนียว"},{"t":11.87,"e":12.62,"text":"กันน้ำกันเหงื่อ"},{"t":12.62,"e":13.32,"text":"อยู่ได้ทั้งวัน"},{"t":13.6,"e":15.01,"text":"ทาแล้วแต่งหน้าต่อได้เลย"},{"t":15.29,"e":16.92,"text":"ตอนแรกลังเลเพราะราคาถูกกว่าเ"},{"t":16.92,"e":17.57,"text":"จ้าอื่นเยอะ"},{"t":17.57,"e":18.74,"text":"แต่ลองแล้วไม่ผิดหวัง"},{"t":19.02,"e":20.09,"text":"ใช้มาสองอาทิตย์แล้ว"},{"t":20.09,"e":21.06,"text":"ยังดีเหมือนวันแรก"},{"t":21.34,"e":23.21,"text":"รีวิวในร้านก็บอกตรงกันว่าคุ้"},{"t":23.21,"e":23.81,"text":"มเกินราคา"},{"t":24.09,"e":25.1,"text":"ร้านมีโค้ดลดเพิ่ม"},{"t":25.1,"e":26.52,"text":"กดรับที่หน้าสินค้าได้เลย"},{"t":26.8,"e":28.61,"text":"ของส่งจากในไทย ไม่ต้องรอนาน"},{"t":28.89,"e":30.28,"text":"ซื้อไปฝากที่บ้านอีกชิ้น"},{"t":30.28,"e":31.31,"text":"เขาก็ชอบเหมือนกัน"},{"t":31.59,"e":33.07,"text":"ราคาเท่านี้ซื้อติดไว้ก่อนได้"},{"t":33.07,"e":34.02,"text":"เลย ไม่ต้องคิดเยอะ"},{"t":34.3,"e":35.71,"text":"ตอนนั้นหาข้อมูลอยู่หลายวัน"},{"t":35.71,"e":37.23,"text":"เทียบมาหลายร้านมากกว่าจะตัดส"},{"t":37.23,"e":37.44,"text":"ินใจ"},{"t":37.72,"e":38.69,"text":"เหลือไม่เยอะแล้วนะ"},{"t":38.97,"e":40.33,"text":"กดตะกร้าส้มใต้คลิปเลย"},{"t":40.33,"e":41.56,"text":"ส่งฟรีมีเก็บปลายทาง"}],"video":{"9:16":{"src":"assets/pv_P-0871_story.mp4","w":720,"h":1280,"sizeKB":1339}}},"P-0520_quick":{"src":"assets/pv_P-0520_quick.mp3","duration":15.72,"target":16,"sizeKB":185,"lines":["ราคานี้ไม่น่าเชื่อ ไฟ LED ติดห้อง RGB ยาว 5 เมตร เหลือแค่ 129 บาท","จากปกติ 299 บาท ลดมาเกินครึ่ง","เปลี่ยนสีได้ 16 ล้านสี ผ่านแอป","มีกาวสองหน้าในตัว ติดเองได้","ตัดสายสั้นได้ตามมุมห้อง","เหลือไม่เยอะแล้วนะ","กดตะกร้าส้มใต้คลิปเลย"],"cues":[{"t":0,"e":1.54,"text":"ราคานี้ไม่น่าเชื่อ ไฟ LED"},{"t":1.54,"e":2.9,"text":"ติดห้อง RGB ยาว 5 เมตร"},{"t":2.9,"e":3.88,"text":"เหลือแค่ 129 บาท"},{"t":4.16,"e":5.68,"text":"จากปกติ 299 บาท"},{"t":5.68,"e":6.99,"text":"ลดมาเกินครึ่ง"},{"t":7.27,"e":8.56,"text":"เปลี่ยนสีได้ 16 ล้านสี"},{"t":8.56,"e":8.97,"text":"ผ่านแอป"},{"t":9.25,"e":10.98,"text":"มีกาวสองหน้าในตัว ติดเองได้"},{"t":11.26,"e":12.71,"text":"ตัดสายสั้นได้ตามมุมห้อง"},{"t":12.99,"e":13.96,"text":"เหลือไม่เยอะแล้วนะ"},{"t":14.24,"e":15.72,"text":"กดตะกร้าส้มใต้คลิปเลย"}],"video":{"9:16":{"src":"assets/pv_P-0520_quick.mp4","w":720,"h":1280,"sizeKB":517}}},"P-0520_show":{"src":"assets/pv_P-0520_show.mp3","duration":24.52,"target":24,"sizeKB":288,"lines":["ราคานี้ไม่น่าเชื่อ ไฟ LED ติดห้อง RGB ยาว 5 เมตร เหลือแค่ 129 บาท","จากปกติ 299 บาท ลดมาเกินครึ่ง","เปลี่ยนสีได้ 16 ล้านสี ผ่านแอป","มีกาวสองหน้าในตัว ติดเองได้","ตัดสายสั้นได้ตามมุมห้อง","ตอนแรกลังเลเพราะราคาถูกกว่าเจ้าอื่นเยอะ แต่ลองแล้วไม่ผิดหวัง","ใช้มาสองอาทิตย์แล้ว ยังดีเหมือนวันแรก","รีวิวในร้านก็บอกตรงกันว่าคุ้มเกินราคา","เหลือไม่เยอะแล้วนะ","กดตะกร้าส้มใต้คลิปเลย"],"cues":[{"t":0,"e":1.54,"text":"ราคานี้ไม่น่าเชื่อ ไฟ LED"},{"t":1.54,"e":2.9,"text":"ติดห้อง RGB ยาว 5 เมตร"},{"t":2.9,"e":3.88,"text":"เหลือแค่ 129 บาท"},{"t":4.16,"e":5.68,"text":"จากปกติ 299 บาท"},{"t":5.68,"e":6.99,"text":"ลดมาเกินครึ่ง"},{"t":7.27,"e":8.55,"text":"เปลี่ยนสีได้ 16 ล้านสี"},{"t":8.55,"e":8.96,"text":"ผ่านแอป"},{"t":9.24,"e":10.98,"text":"มีกาวสองหน้าในตัว ติดเองได้"},{"t":11.26,"e":12.7,"text":"ตัดสายสั้นได้ตามมุมห้อง"},{"t":12.98,"e":14.62,"text":"ตอนแรกลังเลเพราะราคาถูกกว่าเ"},{"t":14.62,"e":15.27,"text":"จ้าอื่นเยอะ"},{"t":15.27,"e":16.44,"text":"แต่ลองแล้วไม่ผิดหวัง"},{"t":16.72,"e":17.79,"text":"ใช้มาสองอาทิตย์แล้ว"},{"t":17.79,"e":18.76,"text":"ยังดีเหมือนวันแรก"},{"t":19.04,"e":20.91,"text":"รีวิวในร้านก็บอกตรงกันว่าคุ้"},{"t":20.91,"e":21.51,"text":"มเกินราคา"},{"t":21.79,"e":22.76,"text":"เหลือไม่เยอะแล้วนะ"},{"t":23.04,"e":24.52,"text":"กดตะกร้าส้มใต้คลิปเลย"}],"video":{"9:16":{"src":"assets/pv_P-0520_show.mp4","w":720,"h":1280,"sizeKB":803}}},"P-0520_story":{"src":"assets/pv_P-0520_story.mp3","duration":41.09,"target":42,"sizeKB":483,"lines":["เมื่อก่อนเจอปัญหานี้ทุกวันจนเลิกใช้ของเดิมไปเลย","ราคานี้ไม่น่าเชื่อ ไฟ LED ติดห้อง RGB ยาว 5 เมตร เหลือแค่ 129 บาท","จากปกติ 299 บาท ลดมาเกินครึ่ง","เปลี่ยนสีได้ 16 ล้านสี ผ่านแอป","มีกาวสองหน้าในตัว ติดเองได้","ตัดสายสั้นได้ตามมุมห้อง","ตอนแรกลังเลเพราะราคาถูกกว่าเจ้าอื่นเยอะ แต่ลองแล้วไม่ผิดหวัง","ใช้มาสองอาทิตย์แล้ว ยังดีเหมือนวันแรก","รีวิวในร้านก็บอกตรงกันว่าคุ้มเกินราคา","ร้านมีโค้ดลดเพิ่ม กดรับที่หน้าสินค้าได้เลย","ของส่งจากในไทย ไม่ต้องรอนาน","ซื้อไปฝากที่บ้านอีกชิ้น เขาก็ชอบเหมือนกัน","ราคาเท่านี้ซื้อติดไว้ก่อนได้เลย ไม่ต้องคิดเยอะ","ตอนนั้นหาข้อมูลอยู่หลายวัน เทียบมาหลายร้านมากกว่าจะตัดสินใจ","เหลือไม่เยอะแล้วนะ","กดตะกร้าส้มใต้คลิปเลย"],"cues":[{"t":0,"e":1.58,"text":"เมื่อก่อนเจอปัญหานี้ทุกวันจน"},{"t":1.58,"e":2.66,"text":"เลิกใช้ของเดิมไปเลย"},{"t":2.94,"e":4.48,"text":"ราคานี้ไม่น่าเชื่อ ไฟ LED"},{"t":4.48,"e":5.83,"text":"ติดห้อง RGB ยาว 5 เมตร"},{"t":5.83,"e":6.82,"text":"เหลือแค่ 129 บาท"},{"t":7.1,"e":8.61,"text":"จากปกติ 299 บาท"},{"t":8.61,"e":9.93,"text":"ลดมาเกินครึ่ง"},{"t":10.21,"e":11.49,"text":"เปลี่ยนสีได้ 16 ล้านสี"},{"t":11.49,"e":11.9,"text":"ผ่านแอป"},{"t":12.18,"e":13.91,"text":"มีกาวสองหน้าในตัว ติดเองได้"},{"t":14.19,"e":15.64,"text":"ตัดสายสั้นได้ตามมุมห้อง"},{"t":15.92,"e":17.56,"text":"ตอนแรกลังเลเพราะราคาถูกกว่าเ"},{"t":17.56,"e":18.2,"text":"จ้าอื่นเยอะ"},{"t":18.2,"e":19.37,"text":"แต่ลองแล้วไม่ผิดหวัง"},{"t":19.65,"e":20.73,"text":"ใช้มาสองอาทิตย์แล้ว"},{"t":20.73,"e":21.69,"text":"ยังดีเหมือนวันแรก"},{"t":21.97,"e":23.84,"text":"รีวิวในร้านก็บอกตรงกันว่าคุ้"},{"t":23.84,"e":24.45,"text":"มเกินราคา"},{"t":24.73,"e":25.73,"text":"ร้านมีโค้ดลดเพิ่ม"},{"t":25.73,"e":27.15,"text":"กดรับที่หน้าสินค้าได้เลย"},{"t":27.43,"e":29.25,"text":"ของส่งจากในไทย ไม่ต้องรอนาน"},{"t":29.53,"e":30.92,"text":"ซื้อไปฝากที่บ้านอีกชิ้น"},{"t":30.92,"e":31.94,"text":"เขาก็ชอบเหมือนกัน"},{"t":32.22,"e":33.71,"text":"ราคาเท่านี้ซื้อติดไว้ก่อนได้"},{"t":33.71,"e":34.66,"text":"เลย ไม่ต้องคิดเยอะ"},{"t":34.94,"e":36.35,"text":"ตอนนั้นหาข้อมูลอยู่หลายวัน"},{"t":36.35,"e":37.86,"text":"เทียบมาหลายร้านมากกว่าจะตัดส"},{"t":37.86,"e":38.08,"text":"ินใจ"},{"t":38.36,"e":39.33,"text":"เหลือไม่เยอะแล้วนะ"},{"t":39.61,"e":41.09,"text":"กดตะกร้าส้มใต้คลิปเลย"}],"video":{"9:16":{"src":"assets/pv_P-0520_story.mp4","w":720,"h":1280,"sizeKB":1359}}},"P-0333_quick":{"src":"assets/pv_P-0333_quick.mp3","duration":17.39,"target":16,"sizeKB":205,"lines":["ราคานี้ไม่น่าเชื่อ ขวดน้ำเก็บความเย็น 1 ลิตร เหลือแค่ 189 บาท","จากปกติ 350 บาท ลดมาเกินครึ่ง","เก็บเย็นได้ 18 ชั่วโมง","สเตนเลสสองชั้น ไม่มีเหงื่อขวด","ฝาเกลียวแน่น ไม่หกในกระเป๋า","ของส่งจากในไทย ไม่ต้องรอนาน","เหลือไม่เยอะแล้วนะ","กดตะกร้าส้มใต้คลิปเลย"],"cues":[{"t":0,"e":1.12,"text":"ราคานี้ไม่น่าเชื่อ"},{"t":1.12,"e":2.68,"text":"ขวดน้ำเก็บความเย็น 1 ลิตร"},{"t":2.68,"e":3.68,"text":"เหลือแค่ 189 บาท"},{"t":3.96,"e":5.39,"text":"จากปกติ 350 บาท"},{"t":5.39,"e":6.64,"text":"ลดมาเกินครึ่ง"},{"t":6.92,"e":8.34,"text":"เก็บเย็นได้ 18 ชั่วโมง"},{"t":8.62,"e":9.48,"text":"สเตนเลสสองชั้น"},{"t":9.48,"e":10.35,"text":"ไม่มีเหงื่อขวด"},{"t":10.63,"e":12.28,"text":"ฝาเกลียวแน่น ไม่หกในกระเป๋า"},{"t":12.56,"e":14.37,"text":"ของส่งจากในไทย ไม่ต้องรอนาน"},{"t":14.65,"e":15.62,"text":"เหลือไม่เยอะแล้วนะ"},{"t":15.9,"e":17.39,"text":"กดตะกร้าส้มใต้คลิปเลย"}],"video":{"9:16":{"src":"assets/pv_P-0333_quick.mp4","w":720,"h":1280,"sizeKB":576}}},"P-0333_show":{"src":"assets/pv_P-0333_show.mp3","duration":24.11,"target":24,"sizeKB":284,"lines":["ราคานี้ไม่น่าเชื่อ ขวดน้ำเก็บความเย็น 1 ลิตร เหลือแค่ 189 บาท","จากปกติ 350 บาท ลดมาเกินครึ่ง","เก็บเย็นได้ 18 ชั่วโมง","สเตนเลสสองชั้น ไม่มีเหงื่อขวด","ฝาเกลียวแน่น ไม่หกในกระเป๋า","ตอนแรกลังเลเพราะราคาถูกกว่าเจ้าอื่นเยอะ แต่ลองแล้วไม่ผิดหวัง","ใช้มาสองอาทิตย์แล้ว ยังดีเหมือนวันแรก","รีวิวในร้านก็บอกตรงกันว่าคุ้มเกินราคา","เหลือไม่เยอะแล้วนะ","กดตะกร้าส้มใต้คลิปเลย"],"cues":[{"t":0,"e":1.12,"text":"ราคานี้ไม่น่าเชื่อ"},{"t":1.12,"e":2.68,"text":"ขวดน้ำเก็บความเย็น 1 ลิตร"},{"t":2.68,"e":3.68,"text":"เหลือแค่ 189 บาท"},{"t":3.96,"e":5.39,"text":"จากปกติ 350 บาท"},{"t":5.39,"e":6.64,"text":"ลดมาเกินครึ่ง"},{"t":6.92,"e":8.34,"text":"เก็บเย็นได้ 18 ชั่วโมง"},{"t":8.62,"e":9.49,"text":"สเตนเลสสองชั้น"},{"t":9.49,"e":10.36,"text":"ไม่มีเหงื่อขวด"},{"t":10.64,"e":12.29,"text":"ฝาเกลียวแน่น ไม่หกในกระเป๋า"},{"t":12.57,"e":14.21,"text":"ตอนแรกลังเลเพราะราคาถูกกว่าเ"},{"t":14.21,"e":14.85,"text":"จ้าอื่นเยอะ"},{"t":14.85,"e":16.02,"text":"แต่ลองแล้วไม่ผิดหวัง"},{"t":16.3,"e":17.38,"text":"ใช้มาสองอาทิตย์แล้ว"},{"t":17.38,"e":18.34,"text":"ยังดีเหมือนวันแรก"},{"t":18.62,"e":20.49,"text":"รีวิวในร้านก็บอกตรงกันว่าคุ้"},{"t":20.49,"e":21.09,"text":"มเกินราคา"},{"t":21.37,"e":22.34,"text":"เหลือไม่เยอะแล้วนะ"},{"t":22.62,"e":24.11,"text":"กดตะกร้าส้มใต้คลิปเลย"}],"video":{"9:16":{"src":"assets/pv_P-0333_show.mp4","w":720,"h":1280,"sizeKB":793}}},"P-0333_story":{"src":"assets/pv_P-0333_story.mp3","duration":40.67,"target":42,"sizeKB":478,"lines":["เมื่อก่อนเจอปัญหานี้ทุกวันจนเลิกใช้ของเดิมไปเลย","ราคานี้ไม่น่าเชื่อ ขวดน้ำเก็บความเย็น 1 ลิตร เหลือแค่ 189 บาท","จากปกติ 350 บาท ลดมาเกินครึ่ง","เก็บเย็นได้ 18 ชั่วโมง","สเตนเลสสองชั้น ไม่มีเหงื่อขวด","ฝาเกลียวแน่น ไม่หกในกระเป๋า","ตอนแรกลังเลเพราะราคาถูกกว่าเจ้าอื่นเยอะ แต่ลองแล้วไม่ผิดหวัง","ใช้มาสองอาทิตย์แล้ว ยังดีเหมือนวันแรก","รีวิวในร้านก็บอกตรงกันว่าคุ้มเกินราคา","ร้านมีโค้ดลดเพิ่ม กดรับที่หน้าสินค้าได้เลย","ของส่งจากในไทย ไม่ต้องรอนาน","ซื้อไปฝากที่บ้านอีกชิ้น เขาก็ชอบเหมือนกัน","ราคาเท่านี้ซื้อติดไว้ก่อนได้เลย ไม่ต้องคิดเยอะ","ตอนนั้นหาข้อมูลอยู่หลายวัน เทียบมาหลายร้านมากกว่าจะตัดสินใจ","เหลือไม่เยอะแล้วนะ","กดตะกร้าส้มใต้คลิปเลย"],"cues":[{"t":0,"e":1.58,"text":"เมื่อก่อนเจอปัญหานี้ทุกวันจน"},{"t":1.58,"e":2.66,"text":"เลิกใช้ของเดิมไปเลย"},{"t":2.94,"e":4.06,"text":"ราคานี้ไม่น่าเชื่อ"},{"t":4.06,"e":5.62,"text":"ขวดน้ำเก็บความเย็น 1 ลิตร"},{"t":5.62,"e":6.62,"text":"เหลือแค่ 189 บาท"},{"t":6.9,"e":8.33,"text":"จากปกติ 350 บาท"},{"t":8.33,"e":9.57,"text":"ลดมาเกินครึ่ง"},{"t":9.85,"e":11.27,"text":"เก็บเย็นได้ 18 ชั่วโมง"},{"t":11.55,"e":12.42,"text":"สเตนเลสสองชั้น"},{"t":12.42,"e":13.29,"text":"ไม่มีเหงื่อขวด"},{"t":13.57,"e":15.23,"text":"ฝาเกลียวแน่น ไม่หกในกระเป๋า"},{"t":15.51,"e":17.14,"text":"ตอนแรกลังเลเพราะราคาถูกกว่าเ"},{"t":17.14,"e":17.79,"text":"จ้าอื่นเยอะ"},{"t":17.79,"e":18.96,"text":"แต่ลองแล้วไม่ผิดหวัง"},{"t":19.24,"e":20.31,"text":"ใช้มาสองอาทิตย์แล้ว"},{"t":20.31,"e":21.28,"text":"ยังดีเหมือนวันแรก"},{"t":21.56,"e":23.43,"text":"รีวิวในร้านก็บอกตรงกันว่าคุ้"},{"t":23.43,"e":24.03,"text":"มเกินราคา"},{"t":24.31,"e":25.32,"text":"ร้านมีโค้ดลดเพิ่ม"},{"t":25.32,"e":26.74,"text":"กดรับที่หน้าสินค้าได้เลย"},{"t":27.02,"e":28.83,"text":"ของส่งจากในไทย ไม่ต้องรอนาน"},{"t":29.11,"e":30.5,"text":"ซื้อไปฝากที่บ้านอีกชิ้น"},{"t":30.5,"e":31.53,"text":"เขาก็ชอบเหมือนกัน"},{"t":31.81,"e":33.29,"text":"ราคาเท่านี้ซื้อติดไว้ก่อนได้"},{"t":33.29,"e":34.24,"text":"เลย ไม่ต้องคิดเยอะ"},{"t":34.52,"e":35.93,"text":"ตอนนั้นหาข้อมูลอยู่หลายวัน"},{"t":35.93,"e":37.45,"text":"เทียบมาหลายร้านมากกว่าจะตัดส"},{"t":37.45,"e":37.66,"text":"ินใจ"},{"t":37.94,"e":38.91,"text":"เหลือไม่เยอะแล้วนะ"},{"t":39.19,"e":40.67,"text":"กดตะกร้าส้มใต้คลิปเลย"}],"video":{"9:16":{"src":"assets/pv_P-0333_story.mp4","w":720,"h":1280,"sizeKB":1328}}},"_model":{"per_line":0.3323,"per_char":0.06046,"voice":"th-TH-PremwadeeNeural","rate":"+8%","samples":12,"mean_error_sec":0.395}};
+
+  /* ---------------- helpers ---------------- */
+  const $ = (sel) => document.querySelector(sel);
+  const $$ = (sel) => [...document.querySelectorAll(sel)];
+  const baht = (n) => n.toLocaleString("th-TH");
+  const tint = (hue, l) => `linear-gradient(145deg, hsl(${hue} 38% ${l}%), hsl(${hue + 18} 44% ${l - 14}%))`;
+  const renderSecs = (format) => Math.round(format.sec * 2.9);
+  const hhmm = (d) => d.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" });
+  const fmtWhen = (d) => d.toLocaleString("th-TH", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+  const sameDay = (a, b) => a.toDateString() === b.toDateString();
+  // measured from the POC render: 2.4 MB for 26.5s at 1080x1920
+  const sizeMB = (j) => (j.format.sec * 0.091 * ((j.aspect.w * j.aspect.h) / (1080 * 1920))).toFixed(1);
+  const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  const clock = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+  const voiceFor = (job) => (job.seed === 0 ? PREVIEW_AUDIO[`${job.product.id}_${job.format.id}`] : null);
+  // the server stores money in satang so the totals stay exact
+  const money = (satang) => (satang / 100).toLocaleString("th-TH", { minimumFractionDigits: 2 });
+  const earned = (job) => job.stats || { orders: 0, commissionSatang: 0, cancelled: 0, salesSatang: 0 };
+
+  /* Photos downloaded by tools/fetch_products.py are served from the app
+     folder. `onerror` removes the img so the gradient behind it stays — that
+     covers demo mode, a published artifact, and a product with no photos. */
+  const photo = (product, n = 1) =>
+    product.hasPhotos
+      ? `<img src="/app/assets/products/${encodeURIComponent(product.id)}/${String(n).padStart(2, "0")}.jpg"`
+        + ` alt="" loading="lazy" onerror="this.remove()">`
+      : "";
+
+  /* ---------------- server link ----------------
+     The page runs in two modes. Served from the FastAPI app it talks to the
+     real queue; opened standalone (a published artifact, or a file) there is
+     no same-origin API to call, so it falls back to the demo data below and
+     says so in the sidebar. */
+  const SERVER = {
+    live: false,
+    token: "",
+    base: "/api",
+
+    async detect() {
+      try {
+        const res = await fetch(`${this.base}/health`, { cache: "no-store" });
+        if (!res.ok) return false;
+        const health = await res.json();
+        this.token = this.readToken();
+        const probe = await fetch(`${this.base}/state`, { headers: this.headers() });
+        if (!probe.ok) return false;
+        this.live = true;
+        this.health = health;
+        return true;
+      } catch (err) {
+        return false; // no server on this origin — demo mode
+      }
+    },
+
+    readToken() {
+      const fromUrl = new URLSearchParams(location.search).get("token");
+      if (fromUrl) {
+        try { localStorage.setItem("cq.token", fromUrl); } catch (err) { /* blocked */ }
+        return fromUrl;
+      }
+      try { return localStorage.getItem("cq.token") || "demo-token"; }
+      catch (err) { return "demo-token"; }
+    },
+
+    headers(extra) {
+      return { "Content-Type": "application/json", Authorization: `Bearer ${this.token}`, ...extra };
+    },
+
+    async call(path, options = {}) {
+      const res = await fetch(this.base + path, { headers: this.headers(), ...options });
+      if (res.status === 204) return null;
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(detailOf(body) || `HTTP ${res.status}`);
+      return body;
+    },
+  };
+
+  function detailOf(body) {
+    const detail = body && body.detail;
+    if (!detail) return "";
+    if (typeof detail === "string") return detail;
+    // FastAPI validation errors arrive as a list of {loc, msg}
+    if (Array.isArray(detail)) {
+      return detail.map((d) => {
+        const field = (d.loc || []).filter((p) => p !== "body").join(".");
+        return field ? `${field}: ${d.msg}` : d.msg;
+      }).join(" · ");
+    }
+    return JSON.stringify(detail);
+  }
+
+  /* ---------------- state ---------------- */
+  const selected = new Set();
+  const logs = [];
+  let sort = "com";
+  let query = "";
+  let paused = false;
+  let seq = 418;
+  let importing = false;
+  let view = "products";
+
+  const cfg = {
+    format: FORMATS[0], aspect: ASPECTS[0], per: 1,
+    cast: CAST[0].name, voice: "หญิง",
+    subtitle: true, bgm: false, tags: true, cart: true,
+    accounts: [ACCOUNTS[0].handle],
+    startDate: iso(new Date()),
+    slots: ["19:30"],
+  };
+
+  function at(dayOffset, time) {
+    const [h, m] = time.split(":").map(Number);
+    const d = new Date();
+    d.setDate(d.getDate() + dayOffset);
+    d.setHours(h, m, 0, 0);
+    return d;
+  }
+
+  function mkJob(product, cast, account, format, aspect, scheduledAt, status, progress) {
+    // Only the seed-0 script has a rendered voiceover in this POC, so prefer it
+    // where one exists and fall back to a random hook everywhere else.
+    const voiced = Boolean(PREVIEW_AUDIO[`${product.id}_${format.id}`]);
+    return {
+      id: "J-" + (++seq),
+      product, cast, format, aspect, scheduledAt, status, progress,
+      createdAt: new Date(),
+      account: account.handle,
+      seed: voiced ? 0 : Math.floor(Math.random() * 4),
+      link: "https://s.shopee.co.th/" + Math.random().toString(36).slice(2, 9),
+      sub: account.sub,
+      cart: status === "hold" || status === "done",
+    };
+  }
+
+  const jobs = [
+    mkJob(PRODUCTS[1], "น้องมายด์ สายบิวตี้", ACCOUNTS[0], FORMATS[0], ASPECTS[0], at(-1, "19:30"), "done", 100),
+    mkJob(PRODUCTS[4], "พี่หมี รีวิวของถูก",  ACCOUNTS[1], FORMATS[1], ASPECTS[0], at(0, "11:30"),  "done", 100),
+    mkJob(PRODUCTS[0], "พี่หมี รีวิวของถูก",  ACCOUNTS[0], FORMATS[2], ASPECTS[0], at(0, "19:30"),  "hold", 100),
+    mkJob(PRODUCTS[2], "ไม่ใช้ตัวละคร",       ACCOUNTS[2], FORMATS[0], ASPECTS[1], at(0, "21:00"),  "run",  46),
+    mkJob(PRODUCTS[9], "ไม่ใช้ตัวละคร",       ACCOUNTS[1], FORMATS[0], ASPECTS[0], at(1, "17:00"),  "wait", 0),
+    mkJob(PRODUCTS[5], "พี่หมี รีวิวของถูก",  ACCOUNTS[2], FORMATS[1], ASPECTS[2], at(1, "21:00"),  "fail", 0),
+  ];
+  jobs[5].error = "เสียงพากย์ล้มเหลว 6 ครั้ง (endpoint ไม่ตอบ)";
+  jobs.forEach((j, i) => { j.createdAt = new Date(Date.now() - (jobs.length - i) * 37 * 60000); });
+
+  const STATUS = {
+    wait: { label: "รอเรนเดอร์", cls: "s-wait" },
+    run:  { label: "กำลังเรนเดอร์", cls: "s-run" },
+    hold: { label: "พร้อมอัป", cls: "s-hold" },
+    done: { label: "อัปแล้ว", cls: "s-done" },
+    fail: { label: "ล้มเหลว", cls: "s-fail" },
+  };
+
+  /* ---------------- toast + log ---------------- */
+  let toastTimer;
+  function toast(msg, tag) {
+    let el = $(".toast");
+    if (!el) { el = document.createElement("div"); el.className = "toast"; document.body.appendChild(el); }
+    el.textContent = msg;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => el.remove(), 2800);
+    log(msg, tag || "ok");
+  }
+  function log(text, tag) {
+    logs.unshift({ at: new Date(), text, tag: tag || "ok" });
+    if (logs.length > 120) logs.pop();
+    $("#n-log").textContent = logs.length;
+    if (view === "log") renderLog();
+  }
+  function renderLog() {
+    const TAGS = { ok: ["ok", "t-ok"], run: ["render", "t-run"], warn: ["warn", "t-warn"], fail: ["error", "t-fail"] };
+    const list = $("#log-list");
+    if (!logs.length) { list.innerHTML = '<p class="empty">ยังไม่มีเหตุการณ์</p>'; return; }
+    list.innerHTML = logs.map((l) => {
+      const [label, cls] = TAGS[l.tag] || TAGS.ok;
+      return `<div class="log-line">
+        <time>${l.at.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</time>
+        <span class="log-tag ${cls}">${label}</span>
+        <span>${l.text}</span>
+      </div>`;
+    }).join("");
+  }
+
+  /* ---------------- script + caption ---------------- */
+  /* Mirror of src/script_gen.plan_lines: beats are added in order of how much
+     they earn their seconds, and only while they bring the estimated duration
+     closer to the format's target. Constants come from the measured model. */
+  const SPEECH = PREVIEW_AUDIO._model || { per_line: 0.52, per_char: 0.066 };
+  const estimate = (lines) =>
+    SPEECH.per_line * lines.length + SPEECH.per_char * lines.reduce((n, l) => n + l.length, 0);
+
+  function scriptFor(job) {
+    // A rendered clip keeps the exact script its voiceover was made from
+    const voiced = voiceFor(job);
+    if (voiced) return voiced.lines.slice();
+
+    const p = job.product;
+    const target = job.format.target;
+    const hook = HOOKS[job.seed % HOOKS.length].replace("{name}", p.name).replace("{price}", baht(p.price));
+    const cta = p.free ? CTA + " ส่งฟรีมีเก็บปลายทาง" : CTA;
+
+    const optional = [];
+    if (p.bullets[0]) optional.push([2, p.bullets[0]]);
+    if (p.was) optional.push([1, `จากปกติ ${baht(p.was)} บาท ลดมาเกินครึ่ง`]);
+    if (p.bullets[1]) optional.push([3, p.bullets[1]]);
+    optional.push([90, CLOSINGS[job.seed % CLOSINGS.length]]);
+    if (p.bullets[2]) optional.push([4, p.bullets[2]]);
+    if (job.format.id === "story") optional.push([0, STORY_OPENERS[job.seed % STORY_OPENERS.length]]);
+    EXTRAS.forEach((text, i) => optional.push([50 + i, text]));
+
+    const chosen = [];
+    const assemble = (extra) => {
+      const picked = [...chosen, ...(extra ? [extra] : [])].sort((a, b) => a[0] - b[0]);
+      // position 0 is the story opener, which sets up the hook and runs before it
+      return [
+        ...picked.filter((b) => b[0] < 1).map((b) => b[1]),
+        hook,
+        ...picked.filter((b) => b[0] >= 1).map((b) => b[1]),
+        cta,
+      ];
+    };
+
+    let bestGap = Math.abs(estimate(assemble()) - target);
+    for (const beat of optional) {
+      if (estimate(assemble()) >= target) break;
+      const gap = Math.abs(estimate(assemble(beat)) - target);
+      if (gap < bestGap) { chosen.push(beat); bestGap = gap; }
+    }
+    return assemble();
+  }
+  function captionFor(job) {
+    const p = job.product;
+    const tags = ["#ของดีบอกต่อ", "#ShopeeTH", "#ตะกร้าส้ม", p.free ? "#ส่งฟรี" : "#ของมันต้องมี"];
+    let out = `${p.name} เหลือ ${baht(p.price)} บาท (ปกติ ${baht(p.was)})\n${p.bullets[0]}\n`;
+    if (job.cart) out += `\nสั่งได้ที่ ${job.link}\n`;
+    return out + (cfg.tags ? tags.join(" ") : "");
+  }
+
+  /* ---------------- step 1: one-click import ---------------- */
+  function runImport() {
+    if (importing) return;
+    importing = true;
+    const bar = $("#import-bar"), fill = bar.querySelector("i"), stat = $("#import-stat");
+    bar.hidden = false;
+    $("#btn-sync").disabled = true;
+    log("เริ่มดึงสินค้าจาก Showcase", "run");
+
+    let pct = 0;
+    const totalShots = PRODUCTS.reduce((n, p) => n + p.shots, 0);
+    const tick = setInterval(() => {
+      pct = Math.min(100, pct + 9);
+      fill.style.width = pct + "%";
+      stat.textContent = `กำลังดึง… ${Math.round((pct / 100) * PRODUCTS.length)}/${PRODUCTS.length} สินค้า · ${Math.round((pct / 100) * totalShots)} รูป`;
+      if (pct >= 100) {
+        clearInterval(tick);
+        setTimeout(() => {
+          bar.hidden = true; fill.style.width = "0";
+          importing = false; $("#btn-sync").disabled = false;
+          stat.textContent = `ดึงล่าสุด ${hhmm(new Date())} น. · ${PRODUCTS.length} สินค้า · ${totalShots} รูป`;
+          toast(`ดึง ${PRODUCTS.length} สินค้า พร้อมรูป ${totalShots} รูป เข้าคลังแล้ว`);
+        }, 350);
+      }
+    }, 140);
+  }
+
+  /* ---------------- products ---------------- */
+  function renderProducts() {
+    const list = PRODUCTS
+      .filter((p) => p.name.toLowerCase().includes(query.toLowerCase()))
+      .sort((a, b) => (sort === "com" ? b.com - a.com : sort === "sold" ? b.sold - a.sold : a.price - b.price));
+
+    const grid = $("#product-grid");
+    grid.innerHTML = list.length ? "" : '<p class="empty" style="grid-column:1/-1">ไม่พบสินค้าที่ตรงกับคำค้น</p>';
+
+    for (const p of list) {
+      const card = document.createElement("button");
+      card.className = "card";
+      card.type = "button";
+      card.setAttribute("aria-pressed", String(selected.has(p.id)));
+      card.innerHTML = `
+        <div class="thumb" style="background:${tint(p.hue, 42)}">
+          <span>${p.name.slice(0, 2)}</span>${photo(p)}<i class="tick">✓</i>
+          ${p.free ? '<i class="flag">ส่งฟรี</i>' : ""}<i class="shots">${p.shots} รูป</i>
+        </div>
+        <div class="card-body">
+          <div class="card-title">${p.name}</div>
+          <div class="price-row"><span class="price">฿${baht(p.price)}</span><span class="price-was">฿${baht(p.was)}</span></div>
+          <div class="meta"><span>ค่าคอมฯ <b>${p.com}%</b></span><span>ขาย ${baht(p.sold)}</span></div>
+        </div>`;
+      card.addEventListener("click", () => {
+        selected.has(p.id) ? selected.delete(p.id) : selected.add(p.id);
+        card.setAttribute("aria-pressed", String(selected.has(p.id)));
+        syncSelection();
+      });
+      grid.appendChild(card);
+    }
+    grid.dataset.visible = list.map((p) => p.id).join(",");
+  }
+
+  function syncSelection() {
+    $("#sel-count").textContent = selected.size;
+    $("#btn-tomake").disabled = selected.size === 0;
+    renderLinked();
+    updateCommit();
+    if (view === "make") renderMakePreview();
+  }
+
+  /* ---------------- config page ---------------- */
+  function fillSelects() {
+    $("#f-format").innerHTML = FORMATS.map((f) =>
+      `<option value="${f.id}">${f.name} · ${f.sec} วินาที — ${f.note}</option>`).join("");
+    $("#f-aspect").innerHTML = ASPECTS.map((a) =>
+      `<option value="${a.id}">${a.id} (${a.w}×${a.h}) — ${a.note}</option>`).join("");
+    $("#f-cast").innerHTML = CAST.map((c) => `<option value="${c.name}">${c.name}</option>`).join("");
+
+    $("#sub-make").innerHTML = FORMATS.map((f) =>
+      `<button class="sub-item" data-format="${f.id}">${f.name}<small>${f.sec} วิ</small></button>`).join("");
+    $$("#sub-make .sub-item").forEach((b) => b.addEventListener("click", () => {
+      cfg.format = FORMATS.find((f) => f.id === b.dataset.format);
+      $("#f-format").value = cfg.format.id;
+      show("make");
+      syncConfig();
+    }));
+
+    $("#f-date").value = cfg.startDate;
+    $("#f-date").min = cfg.startDate;
+    renderSlots();
+    renderAcctPick();
+  }
+
+  function renderSlots() {
+    const all = [...new Set([...SLOTS, ...cfg.slots])].sort();
+    $("#slot-opts").innerHTML = all.map((s) =>
+      `<button class="chip" type="button" data-slot="${s}" aria-pressed="${cfg.slots.includes(s)}">${s} น.</button>`).join("");
+    $$("#slot-opts [data-slot]").forEach((b) => b.addEventListener("click", () => {
+      const on = b.getAttribute("aria-pressed") !== "true";
+      b.setAttribute("aria-pressed", String(on));
+      cfg.slots = $$('#slot-opts [aria-pressed="true"]').map((c) => c.dataset.slot);
+      updateCommit();
+    }));
+  }
+
+  function renderAcctPick() {
+    $("#acct-pick").innerHTML = ACCOUNTS.map((a) => {
+      const left = a.cap > 0 ? `เหลือวันนี้ ${Math.max(0, a.cap - a.used)} คลิป` : "ไม่จำกัด";
+      return `<button class="acct-item" type="button" data-acct="${a.handle}" aria-pressed="${cfg.accounts.includes(a.handle)}">
+        <i class="box">✓</i><span class="t"><b>${a.handle}</b><small>${a.sub} · ${left}</small></span>
+      </button>`;
+    }).join("");
+    $$("#acct-pick [data-acct]").forEach((b) => b.addEventListener("click", () => {
+      const on = b.getAttribute("aria-pressed") !== "true";
+      b.setAttribute("aria-pressed", String(on));
+      cfg.accounts = $$('#acct-pick [aria-pressed="true"]').map((c) => c.dataset.acct);
+      updateCommit();
+    }));
+  }
+
+  function renderLinked() {
+    const picked = PRODUCTS.filter((p) => selected.has(p.id));
+    $("#linked-n").textContent = picked.length;
+    $("#linked-list").innerHTML = picked.length
+      ? picked.map((p) => `
+        <div class="linked-item">
+          <i style="background:${tint(p.hue, 42)}">${photo(p)}</i>
+          <span class="t"><b>${p.name}</b><small>฿${baht(p.price)} · คอมฯ ${p.com}%</small></span>
+          <button type="button" data-drop="${p.id}" aria-label="เอา ${p.name} ออก">×</button>
+        </div>`).join("")
+      : '<div class="blank">ยังไม่ได้เลือกสินค้า — กด “เลือกสินค้า” เพื่อไปหน้า Showcase</div>';
+    $$("#linked-list [data-drop]").forEach((b) => b.addEventListener("click", () => {
+      selected.delete(b.dataset.drop);
+      syncSelection();
+      renderProducts();
+    }));
+  }
+
+  function syncConfig() {
+    $("#make-title").textContent = "สร้างคลิป — " + cfg.format.name;
+    $("#make-badge").textContent = `${cfg.format.name} ${cfg.format.sec} วิ`;
+    $("#make-ratio").textContent = cfg.aspect.id;
+    $("#per-hint").textContent =
+      `${cfg.format.sec} วิ ต่อคลิป · เรนเดอร์ราว ${renderSecs(cfg.format)} วิ · ไฟล์ราว ${sizeMB(cfg)} MB`;
+    $$("#sub-make .sub-item").forEach((b) =>
+      b.setAttribute("aria-current", String(b.dataset.format === cfg.format.id)));
+    updateCommit();
+    if (view === "make") renderMakePreview();
+  }
+
+  function updateCommit() {
+    const n = selected.size * cfg.per * cfg.accounts.length;
+    const btn = $("#btn-commit");
+    btn.textContent = n ? `+ เพิ่มลงคิว (${n} คลิป)` : "+ เพิ่มลงคิว";
+    btn.disabled = n === 0 || !cfg.slots.length;
+
+    const parts = [];
+    if (!selected.size) parts.push("ยังไม่ได้เลือกสินค้า");
+    if (!cfg.accounts.length) parts.push("ยังไม่ได้เลือกบัญชี");
+    if (!cfg.slots.length) parts.push("ยังไม่ได้เลือกรอบเวลา");
+
+    const over = cfg.accounts
+      .map((h) => ACCOUNTS.find((a) => a.handle === h))
+      .filter((a) => a && a.cap > 0 && selected.size * cfg.per > a.cap - a.used);
+    if (!parts.length && over.length) parts.push(`เกินเพดานของ ${over.map((a) => a.handle).join(", ")} — ส่วนเกินจะเลื่อนไปวันถัดไป`);
+
+    $("#commit-hint").innerHTML = parts.length
+      ? parts.join(" · ")
+      : `${selected.size} สินค้า × ${cfg.per} คลิป × ${cfg.accounts.length} บัญชี · เรนเดอร์ราว <b>${Math.round(n * renderSecs(cfg.format) / 60)}</b> นาที · ราว <b>${(n * Number(sizeMB(cfg))).toFixed(0)}</b> MB`;
+  }
+
+  async function commitToServer() {
+    const button = $("#btn-commit");
+    const label = button.textContent;
+    button.disabled = true;
+    button.textContent = "กำลังส่ง…";
+    try {
+      const result = await SERVER.call("/queue", {
+        method: "POST",
+        body: JSON.stringify({
+          product_ids: [...selected],
+          account_ids: cfg.accounts
+            .map((handle) => (ACCOUNTS.find((a) => a.handle === handle) || {}).id)
+            .filter(Boolean),
+          slots: cfg.slots,
+          format: cfg.format.id,
+          aspect: cfg.aspect.id,
+          persona: cfg.cast,
+          voice: cfg.voice === "ชาย" ? "male" : "female",
+          per: cfg.per,
+          cart: cfg.cart,
+          start_date: cfg.startDate,
+          // a double-click or a flaky connection must not queue twice
+          idempotency_key: crypto.randomUUID(),
+        }),
+      });
+      selected.clear();
+      await pullState();
+      show("queue");
+      toast(result.duplicate
+        ? "คำขอนี้ส่งไปแล้ว ไม่ได้สร้างซ้ำ"
+        : `เพิ่ม ${result.created} คลิปลงคิว · กระจาย ${result.days} วัน`);
+    } catch (err) {
+      toast(`เพิ่มลงคิวไม่สำเร็จ · ${err.message}`, "fail");
+    } finally {
+      button.disabled = false;
+      button.textContent = label;
+      updateCommit();
+    }
+  }
+
+  function commit() {
+    if (SERVER.live) { commitToServer(); return; }
+    const picked = PRODUCTS.filter((p) => selected.has(p.id));
+    // Each account fills its own days: once it hits its daily cap the rest roll
+    // to the next day, so the cap shapes the schedule instead of only warning.
+    const cursor = new Map(cfg.accounts.map((handle) => {
+      const a = ACCOUNTS.find((x) => x.handle === handle);
+      return [handle, { day: 0, onDay: a.cap > 0 ? a.used : 0, slot: 0 }];
+    }));
+    const times = [...cfg.slots].sort();
+    let made = 0, lastDay = 0;
+
+    picked.forEach((p) => {
+      cfg.accounts.forEach((handle) => {
+        const account = ACCOUNTS.find((a) => a.handle === handle);
+        const c = cursor.get(handle);
+        for (let i = 0; i < cfg.per; i++) {
+          if (account.cap > 0 && c.onDay >= account.cap) { c.day++; c.onDay = 0; c.slot = 0; }
+          const when = new Date(cfg.startDate + "T00:00:00");
+          const [hh, mm] = times[c.slot % times.length].split(":").map(Number);
+          when.setDate(when.getDate() + c.day);
+          when.setHours(hh, mm, 0, 0);
+          c.slot++; c.onDay++;
+          lastDay = Math.max(lastDay, c.day);
+
+          const job = mkJob(p, cfg.cast, account, cfg.format, cfg.aspect, when, "wait", 0);
+          job.cart = cfg.cart;
+          jobs.push(job);
+          made++;
+        }
+      });
+    });
+
+    selected.clear();
+    syncSelection();
+    renderProducts();
+    show("queue");
+    renderQueue();
+    renderVideos();
+    toast(`เพิ่ม ${made} คลิปลงคิว · ${cfg.accounts.length} บัญชี · ${cfg.aspect.id}`
+      + (lastDay ? ` · กระจาย ${lastDay + 1} วัน` : ""));
+  }
+
+  /* ---------------- queue ---------------- */
+  function barRows(container, rows, alt) {
+    const peak = Math.max(1, ...rows.map((r) => r.n));
+    container.innerHTML = rows.map((r) => `
+      <div class="slot-row">
+        <span class="slot-time">${r.label}</span>
+        <div class="slot-track"><i class="${alt ? "alt" : ""}" style="width:${(r.n / peak) * 100}%"></i></div>
+        <span class="slot-n">${r.n}</span>
+      </div>`).join("");
+  }
+
+  function renderQueue() {
+    const counts = { wait: 0, run: 0, hold: 0, done: 0, fail: 0 };
+    jobs.forEach((j) => counts[j.status]++);
+    $("#k-total").textContent = jobs.length;
+    $("#k-run").textContent = counts.run;
+    $("#k-hold").textContent = counts.hold;
+    $("#k-done").textContent = counts.done;
+    $("#n-queue").textContent = jobs.length;
+
+    const times = [...new Set(jobs.map((j) => hhmm(j.scheduledAt)))].sort();
+    barRows($("#slot-chart"), times.map((s) => ({ label: s + " น.", n: jobs.filter((j) => hhmm(j.scheduledAt) === s).length })));
+    barRows($("#acc-chart"), ACCOUNTS.map((a) => ({ label: a.handle, n: jobs.filter((j) => j.account === a.handle).length })), true);
+
+    const list = $("#job-list");
+    list.innerHTML = "";
+    if (!jobs.length) { list.innerHTML = '<p class="empty">คิวว่าง — ไปที่ Product Showcase แล้วเลือกสินค้า</p>'; return; }
+
+    for (const job of jobs) {
+      const st = STATUS[job.status];
+      const el = document.createElement("article");
+      el.className = "job";
+      el.innerHTML = `
+        <div class="job-thumb" style="background:${tint(job.product.hue, 42)}">${photo(job.product)}</div>
+        <div class="job-main">
+          <div class="job-title">${job.product.name}</div>
+          <div class="job-meta">
+            <code>${job.id}</code><span>${job.account}</span>
+            <span>${job.format.name} ${job.format.sec} วิ</span><span class="ratio">${job.aspect.id}</span>
+            <span>อัป ${fmtWhen(job.scheduledAt)}</span>
+            ${job.cart ? '<span class="cart">ปักตะกร้าแล้ว</span>' : ""}
+            ${job.error ? `<span style="color:var(--fail)">${job.error}</span>` : ""}
+          </div>
+        </div>
+        <div class="job-side">
+          ${job.status === "run" ? `<div class="bar"><i style="width:${job.progress}%"></i></div>` : ""}
+          <span class="status ${st.cls}">${st.label}</span>
+        </div>`;
+      const side = el.querySelector(".job-side");
+      if (job.status === "hold") side.appendChild(action("เปิดเพื่ออัป", true, () => openDrawer(job)));
+      if (job.status === "fail") side.appendChild(action("ลองใหม่", false, () => {
+        if (SERVER.live) {
+          withServer(() => SERVER.call(`/jobs/${job.id}/retry`, { method: "POST" }), "ส่งกลับเข้าคิว")
+            .then((ok) => ok && toast("ส่งกลับเข้าคิวแล้ว · " + job.id, "warn"));
+          return;
+        }
+        job.status = "wait"; job.progress = 0; delete job.error;
+        renderQueue(); renderVideos(); toast("ส่งกลับเข้าคิวแล้ว · " + job.id, "warn");
+      }));
+      side.appendChild(action("สคริปต์", false, () => openDrawer(job)));
+      list.appendChild(el);
+    }
+  }
+
+  function action(label, primary, fn) {
+    const b = document.createElement("button");
+    b.className = "btn btn-sm" + (primary ? " btn-primary" : "");
+    b.textContent = label;
+    b.addEventListener("click", fn);
+    return b;
+  }
+
+  setInterval(() => {
+    if (paused || SERVER.live) return;  // live mode polls the server instead
+    const running = jobs.find((j) => j.status === "run");
+    if (running) {
+      running.progress = Math.min(100, running.progress + 7);
+      if (running.progress >= 100) {
+        running.status = "hold";
+        running.cart = running.cart || cfg.cart;
+        toast(`คลิปพร้อม · ${running.account} · ${running.id}`);
+        renderVideos();
+      }
+      renderQueue();
+      $("#worker-text").textContent = `เรนเดอร์ ${running.id} · ${running.progress}%`;
+      return;
+    }
+    const next = jobs.find((j) => j.status === "wait");
+    if (next) { next.status = "run"; next.progress = 4; log(`เริ่มเรนเดอร์ ${next.id} · ${next.product.name}`, "run"); renderQueue(); }
+    else $("#worker-text").textContent = "worker ว่าง";
+  }, 650);
+
+  /* ---------------- videos ---------------- */
+  let vFilter = "all", vSort = "created", vQuery = "";
+
+  function renderVideos() {
+    $("#n-videos").textContent = jobs.length;
+    const rows = jobs
+      .filter((j) => vFilter === "all" || j.status === vFilter)
+      .filter((j) => {
+        const q = vQuery.toLowerCase();
+        return !q || j.product.name.toLowerCase().includes(q) || j.id.toLowerCase().includes(q);
+      })
+      .sort((a, b) => (vSort === "created" ? b.createdAt - a.createdAt : a.scheduledAt - b.scheduledAt));
+
+    const body = $("#vid-rows");
+    body.innerHTML = rows.length ? "" : '<tr><td colspan="10"><p class="empty">ไม่มีวิดีโอที่ตรงกับตัวกรอง</p></td></tr>';
+
+    for (const job of rows) {
+      const st = STATUS[job.status];
+      const tr = document.createElement("tr");
+      tr.tabIndex = 0;
+      tr.innerHTML = `
+        <td class="num">${job.id}</td>
+        <td><div class="cell-prod"><i style="background:${tint(job.product.hue, 42)}">${photo(job.product)}</i><span>${job.product.name}</span></div></td>
+        <td>${job.account}</td>
+        <td>${job.format.name}</td>
+        <td><span class="ratio">${job.aspect.id}</span></td>
+        <td class="num">${job.format.sec} วิ</td>
+        <td class="num">${fmtWhen(job.createdAt)}</td>
+        <td class="num">${fmtWhen(job.scheduledAt)}</td>
+        <td class="num">${earned(job).orders || "—"}${earned(job).cancelled
+          ? ` <span style="color:var(--fail)">(ยกเลิก ${earned(job).cancelled})</span>` : ""}</td>
+        <td class="num" style="${earned(job).commissionSatang ? "color:var(--ok);font-weight:600" : ""}">
+          ${earned(job).commissionSatang ? "฿" + money(earned(job).commissionSatang) : "—"}</td>
+        <td><span class="status ${st.cls}">${st.label}</span></td>`;
+      const open = () => openDrawer(job);
+      tr.addEventListener("click", open);
+      tr.addEventListener("keydown", (e) => { if (e.key === "Enter") open(); });
+      body.appendChild(tr);
+    }
+
+    const totalMB = rows.reduce((n, j) => n + Number(sizeMB(j)), 0);
+    const totalSec = rows.reduce((n, j) => n + j.format.sec, 0);
+    const todayCount = rows.filter((j) => sameDay(j.createdAt, new Date())).length;
+    $("#vid-summary").textContent =
+      `แสดง ${rows.length} จาก ${jobs.length} คลิป · สร้างวันนี้ ${todayCount} คลิป · รวม ${Math.round(totalSec / 60)} นาที ${totalMB.toFixed(0)} MB`;
+
+    // earnings only exist once the report has been pulled from Shopee
+    const paid = jobs.filter((j) => earned(j).commissionSatang > 0);
+    const commission = jobs.reduce((n, j) => n + earned(j).commissionSatang, 0);
+    const orders = jobs.reduce((n, j) => n + earned(j).orders, 0);
+    const box = $("#earn-kpis");
+    box.hidden = !SERVER.live;
+    if (SERVER.live) {
+      $("#e-orders").textContent = orders;
+      $("#e-commission").textContent = "฿" + money(commission);
+      $("#e-clips").textContent = `${paid.length} / ${jobs.length}`;
+      $("#e-sync").textContent = EARNINGS.lastSync
+        ? fmtWhen(new Date(EARNINGS.lastSync)) : "ยังไม่เคยดึง";
+
+      // the KPI counts clips only; Shopee's own dashboard also counts orders
+      // from links this system never made, so say so rather than look wrong
+      const all = EARNINGS.commissionSatang || 0;
+      if (all > commission) {
+        $("#vid-summary").textContent +=
+          ` · ยอดรวมทั้งบัญชีใน Shopee ฿${money(all)}`
+          + ` (ต่างกัน ฿${money(all - commission)} จาก ${EARNINGS.unmatched} ออเดอร์ที่ไม่ได้มาจากคลิปในระบบนี้)`;
+      }
+    }
+  }
+
+  /* ---------------- mock player ----------------
+     Not a real video: it replays the same beats the ffmpeg pipeline would
+     render — shots cross-fading with a Ken Burns push, the price badge, and
+     captions split proportionally by character count, which is exactly how
+     voice.py times them when the Thai voice gives no word boundaries. */
+  const timers = new WeakMap();
+
+  function previewCues(lines, total) {
+    const chars = lines.reduce((n, l) => n + l.length, 0) || 1;
+    let clock = 0;
+    return lines.map((text) => {
+      const span = Math.max(1.1, (total * text.length) / chars);
+      const cue = { text, start: clock, end: clock + span };
+      clock += span;
+      return cue;
+    });
+  }
+
+  function mountPreview(host, opts) {
+    const { product, format, aspect, lines, seed } = opts;
+    // A rendered voiceover belongs to one exact script. Re-rolling the hook
+    // changes the words, so the audio no longer matches and the preview says so.
+    const voiced = seed === 0 ? PREVIEW_AUDIO[`${product.id}_${format.id}`] : null;
+    // A rendered mp4 already has the shots, badge and captions burned in, so
+    // the frame shows the file itself instead of the CSS stand-in. `clip` can
+    // come from the bundled demo set or from this server's own render.
+    const clip = opts.clip || (voiced && voiced.video ? voiced.video[aspect.id] : null);
+    const total = opts.duration || (voiced ? voiced.duration : format.sec);
+    const cues = voiced
+      ? voiced.cues.map((c) => ({ text: c.text, start: c.t, end: c.e }))
+      : previewCues(lines, total);
+    const shots = Math.max(3, product.shots);
+
+    clearInterval(timers.get(host));
+    host.innerHTML = `
+      <div class="pv">
+        <div class="pv-frame" style="aspect-ratio:${aspect.w} / ${aspect.h}">
+          <span class="pv-mock">${clip ? "คลิปจริง" : "ตัวอย่างจำลอง"}</span>
+          <span class="pv-ratio">${clip ? `${clip.w}×${clip.h}` : `${aspect.w}×${aspect.h}`}</span>
+          ${clip ? `<video class="pv-video" data-video preload="metadata" playsinline src="${clip.src}"></video>` : `
+          ${Array.from({ length: shots }, (_, i) => `
+            <div class="pv-shot${i === 0 ? " on" : ""}" data-shot="${i}"
+                 style="background:${tint(product.hue + i * 9, 44)}">
+              <div class="pv-card"></div>
+              <i>${product.name.slice(0, 2)} ${i + 1}/${shots}</i>
+            </div>`).join("")}
+          <div class="pv-top">
+            <div class="pv-price">เหลือ ฿${baht(product.price)} (ปกติ ฿${baht(product.was)})</div>
+            <div class="pv-name">${product.name}</div>
+          </div>
+          <div class="pv-cap" data-cap></div>`}
+        </div>
+        <div class="pv-ctl">
+          <button class="btn btn-sm" type="button" data-play>▶ เล่น</button>
+          <div class="pv-track" data-track role="slider" tabindex="0"
+               aria-label="ตำแหน่งในคลิป" aria-valuemin="0" aria-valuemax="${total.toFixed(1)}" aria-valuenow="0"><i></i></div>
+          <span class="pv-time" data-time>0:00 / ${clock(total)}</span>
+        </div>
+        ${voiced && !clip ? `<audio data-audio src="${voiced.src}" preload="none"></audio>` : ""}
+        <p class="pv-note">${clip
+          ? `ไฟล์ mp4 ที่ ffmpeg เรนเดอร์จริง · ${clip.w}×${clip.h} · ${clip.sizeKB} KB · ซับเบิร์นติดภาพ`
+          : voiced
+            ? `เสียงพากย์ไทยของจริง · ${voiced.sizeKB} KB · ยังไม่ได้เรนเดอร์ภาพที่สัดส่วน ${aspect.id}`
+            : (seed === 0
+              ? "ยังไม่ได้เรนเดอร์คลิปของสินค้านี้ · ซับประมาณจากความยาวข้อความ"
+              : "สคริปต์ถูกสุ่มใหม่ คลิปที่เรนเดอร์ไว้จึงไม่ตรง ต้องสั่งเรนเดอร์ใหม่")}</p>
+      </div>`;
+
+    const frame = host.querySelector(".pv-frame");
+    const cap = host.querySelector("[data-cap]");
+    const play = host.querySelector("[data-play]");
+    const track = host.querySelector("[data-track]");
+    const fill = track.querySelector("i");
+    const time = host.querySelector("[data-time]");
+    const shotEls = [...host.querySelectorAll(".pv-shot")];
+    // one media element drives the clock, whichever kind this preview has
+    const media = host.querySelector("[data-video]") || host.querySelector("[data-audio]");
+
+    let t = 0;
+    let running = false;
+
+    function paint() {
+      if (!clip) {
+        const idx = Math.min(shots - 1, Math.floor((t / total) * shots));
+        shotEls.forEach((el, i) => {
+          el.classList.toggle("on", i === idx);
+          if (i === idx) {
+            // alternate push-in / pull-out, same as render.py
+            const within = (t - (idx * total) / shots) / (total / shots);
+            const z = i % 2 === 0 ? 1 + 0.12 * within : 1.12 - 0.12 * within;
+            el.style.transform = `scale(${z.toFixed(3)})`;
+          }
+        });
+        const cue = cues.find((c) => t >= c.start && t < c.end);
+        cap.textContent = cue ? cue.text : "";
+      }
+      const pct = Math.min(100, (t / total) * 100);
+      fill.style.width = pct + "%";
+      track.setAttribute("aria-valuenow", t.toFixed(1));
+      time.textContent = `${clock(t)} / ${clock(total)}`;
+    }
+
+    function stop() {
+      running = false;
+      clearInterval(timers.get(host));
+      if (media) media.pause();
+      play.textContent = "▶ เล่น";
+    }
+
+    function seek(next) {
+      t = Math.max(0, Math.min(total, next));
+      if (media) { try { media.currentTime = t; } catch (err) { /* not loaded yet */ } }
+      paint();
+    }
+
+    play.addEventListener("click", () => {
+      if (running) { stop(); return; }
+      if (t >= total) seek(0);
+      running = true;
+      play.textContent = "❚❚ หยุด";
+      // The media element is the clock when there is one, so the captions stay
+      // locked to the voice even if the timer drifts.
+      if (media) {
+        media.currentTime = t;
+        media.play().catch(() => {
+          play.textContent = "▶ เล่น";
+          running = false;
+          toast("เบราว์เซอร์ยังไม่ให้เล่นสื่อ ลองกดอีกครั้ง", "warn");
+        });
+      }
+      timers.set(host, setInterval(() => {
+        t = media ? media.currentTime : t + 0.1;
+        if (t >= total - 0.05) { t = total; paint(); stop(); return; }
+        paint();
+      }, 100));
+    });
+
+    track.addEventListener("click", (e) => {
+      const rect = track.getBoundingClientRect();
+      seek(((e.clientX - rect.left) / rect.width) * total);
+    });
+    track.addEventListener("keydown", (e) => {
+      if (e.key === "ArrowRight") seek(t + 1);
+      if (e.key === "ArrowLeft") seek(t - 1);
+    });
+
+    frame.addEventListener("click", () => play.click());
+    paint();
+    return stop;
+  }
+
+  function renderMakePreview() {
+    const product = PRODUCTS.find((p) => selected.has(p.id)) || PRODUCTS[0];
+    const stub = { product, format: cfg.format, aspect: cfg.aspect, seed: 0, cart: cfg.cart };
+    mountPreview($("#make-preview"), {
+      product, format: cfg.format, aspect: cfg.aspect, seed: 0, lines: scriptFor(stub),
+    });
+  }
+
+  /* ---------------- drawer ---------------- */
+  function openDrawer(job) {
+    // a rendered job carries the exact script and caption its mp4 was made from
+    const lines = (job.serverScript && job.serverScript.length) ? job.serverScript : scriptFor(job);
+    const beats = job.format.id === "story"
+      ? ["เปิดเรื่อง", "hook", "ราคา", "จุดขาย", "จุดขาย", "จุดขาย", "ปิดท้าย", "CTA"]
+      : ["hook", "ราคา", "จุดขาย", "จุดขาย", "จุดขาย", "ปิดท้าย", "CTA"];
+    const ready = job.status === "hold";
+
+    const scrim = document.createElement("div");
+    scrim.className = "scrim";
+    scrim.innerHTML = `
+      <div class="drawer" role="dialog" aria-modal="true" aria-label="รายละเอียดคลิป">
+        <div style="display:flex;align-items:flex-start;gap:12px">
+          <div style="flex:1;min-width:0">
+            <div class="beat">${job.id} · ${job.account} · ${job.format.name}</div>
+            <h2 style="font-family:var(--display);font-size:16px;margin:2px 0 0">${job.product.name}</h2>
+          </div>
+          <button class="btn btn-sm" type="button" data-close>ปิด</button>
+        </div>
+
+        <div id="drawer-preview"></div>
+
+        <div>
+          <div class="beat" style="margin-bottom:7px">สคริปต์พูด</div>
+          <div class="script">${lines.map((l, i) => `<div class="script-line"><span>${beats[i] || "เสริม"}</span><div>${l}</div></div>`).join("")}</div>
+        </div>
+
+        <div>
+          <div class="beat" style="margin-bottom:7px">แคปชันสำหรับ Shopee Video</div>
+          <div class="caption" id="cap">${job.serverCaption || captionFor(job)}</div>
+        </div>
+
+        <div class="row"><div class="kv">
+          <div><span>ขนาด / ความละเอียด</span><b class="num">${job.aspect.id} · ${job.aspect.w}×${job.aspect.h}</b></div>
+          <div><span>ความยาว / ไฟล์</span><b class="num">${job.format.sec} วิ · ${sizeMB(job)} MB</b></div>
+          ${voiceFor(job) ? `<div><span>เสียงพากย์ที่เรนเดอร์แล้ว</span><b class="num">${voiceFor(job).duration.toFixed(1)} วิ · ${voiceFor(job).sizeKB} KB</b></div>` : ""}
+          <div><span>ลิงก์ปักตะกร้า</span><b>${job.cart ? "พร้อม · " + job.sub : "ไม่ได้สร้าง"}</b></div>
+          <div><span>ค่าคอมฯ ต่อออเดอร์</span><b class="num">฿${baht(Math.round(job.product.price * job.product.com / 100))}</b></div>
+          <div><span>สร้างเมื่อ</span><b class="num">${fmtWhen(job.createdAt)}</b></div>
+          <div><span>กำหนดอัป</span><b class="num">${fmtWhen(job.scheduledAt)}</b></div>
+        </div></div>
+
+        <div style="display:grid;gap:8px">
+          <button class="btn" type="button" id="copy-cap">คัดลอกแคปชัน + ลิงก์</button>
+          <button class="btn" type="button" id="reroll">สุ่ม hook ใหม่</button>
+          ${ready ? '<button class="btn btn-primary" type="button" id="mark">ทำเครื่องหมายว่าอัปแล้ว</button>' : ""}
+        </div>
+        ${ready ? `<p style="margin:0;font-size:11.5px;color:var(--fg-mute);line-height:1.6">เปิดแอป Shopee ด้วยบัญชี ${job.account} → Shopee Video → อัปคลิป → วางแคปชัน → ปักตะกร้าสินค้า แล้วกลับมากดปุ่มด้านบน</p>` : ""}
+      </div>`;
+
+    scrim.addEventListener("click", (e) => {
+      if (e.target === scrim || e.target.hasAttribute("data-close")) scrim.remove();
+    });
+    scrim.querySelector("#reroll").addEventListener("click", () => {
+      job.seed = (job.seed + 1) % HOOKS.length;
+      scrim.remove(); openDrawer(job);
+    });
+    scrim.querySelector("#copy-cap").addEventListener("click", () => {
+      const node = scrim.querySelector("#cap");
+      const fallback = () => {
+        const r = document.createRange();
+        r.selectNodeContents(node);
+        const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r);
+        toast("เลือกข้อความให้แล้ว กด Ctrl+C เพื่อคัดลอก", "warn");
+      };
+      try { navigator.clipboard.writeText(node.textContent).then(() => toast("คัดลอกแคปชันแล้ว"), fallback); }
+      catch (e) { fallback(); }
+    });
+    const mark = scrim.querySelector("#mark");
+    if (mark) mark.addEventListener("click", () => {
+      if (SERVER.live) {
+        mark.disabled = true;
+        withServer(() => SERVER.call(`/jobs/${job.id}/posted`, { method: "POST" }), "บันทึกว่าอัปแล้ว")
+          .then((ok) => { if (ok) { scrim.remove(); toast("บันทึกว่าอัปแล้ว · " + job.account); }
+                          else mark.disabled = false; });
+        return;
+      }
+      job.status = "done";
+      const acc = ACCOUNTS.find((a) => a.handle === job.account);
+      if (acc) acc.used = acc.cap > 0 ? Math.min(acc.cap, acc.used + 1) : acc.used + 1;
+      scrim.remove();
+      renderQueue(); renderVideos(); renderAccounts(); renderAcctPick();
+      toast("บันทึกว่าอัปแล้ว · " + job.account);
+    });
+
+    document.body.appendChild(scrim);
+    const host = scrim.querySelector("#drawer-preview");
+    mountPreview(host, {
+      product: job.product, format: job.format, aspect: job.aspect, seed: job.seed, lines,
+    });
+    // the real mp4 sits behind the API's auth header, which <video src> cannot
+    // send — fetch it once and hand the player a blob instead
+    if (job.videoUrl && SERVER.live) {
+      host.insertAdjacentHTML("afterbegin",
+        '<p class="pv-note" data-loading>กำลังโหลดคลิปที่เรนเดอร์จริง…</p>');
+      fetch(job.videoUrl, { headers: SERVER.headers() })
+        .then((res) => (res.ok ? res.blob() : Promise.reject(new Error(`HTTP ${res.status}`))))
+        .then((blob) => {
+          if (!scrim.isConnected) return;
+          const url = URL.createObjectURL(blob);
+          mountPreview(host, {
+            product: job.product, format: job.format, aspect: job.aspect, seed: job.seed, lines,
+            clip: { src: url, w: job.aspect.w, h: job.aspect.h, sizeKB: job.sizeKB },
+            duration: job.duration,
+          });
+          scrim.addEventListener("remove", () => URL.revokeObjectURL(url), { once: true });
+        })
+        .catch((err) => {
+          const note = host.querySelector("[data-loading]");
+          if (note) note.textContent = `โหลดคลิปไม่สำเร็จ · ${err.message}`;
+        });
+    }
+  }
+
+  /* ---------------- cast + accounts ---------------- */
+  $("#cast-list").innerHTML = CAST.map((c) => `
+    <div class="row">
+      <div class="avatar" style="background:${tint(c.hue, 44)}">${c.name.slice(0, 1)}</div>
+      <div class="row-main"><h3>${c.name}</h3><p>${c.note}</p></div>
+      <div class="num" style="font-size:12px;color:var(--fg-mute)">${c.clips} คลิป</div>
+    </div>`).join("");
+
+  function renderAccounts() {
+    $("#account-list").innerHTML = ACCOUNTS.map((a) => {
+      const capped = a.cap > 0;
+      const full = capped && a.used >= a.cap;
+      const pct = capped ? Math.min(100, (a.used / a.cap) * 100) : 0;
+      return `
+      <div class="row">
+        <div class="avatar" style="background:${tint(a.hue, 42)}">S</div>
+        <div class="row-main">
+          <h3>${a.handle}</h3>
+          <p>sub-id <code class="num">${a.sub}</code> · แยกยอดค่าคอมฯ ต่อบัญชีได้</p>
+        </div>
+        <div class="quota">
+          <label class="quota-k" for="cap-${a.id}">
+            อัปแล้ววันนี้ ${a.used} จาก
+            <input class="cap-input" id="cap-${a.id}" type="number" min="0" max="99" value="${a.cap}" data-acc="${a.id}" aria-label="เพดานคลิปต่อวันของ ${a.handle}">
+            ${capped ? "คลิป" : "— ไม่จำกัด"}
+          </label>
+          <div class="quota-bar"><i class="${full ? "hot" : ""}" style="width:${pct}%"></i></div>
+        </div>
+        <span class="status ${full ? "s-hold" : "s-done"}">${full ? "เต็มเพดาน" : "พร้อมใช้"}</span>
+      </div>`;
+    }).join("");
+  }
+
+  // 0 = ไม่จำกัด. Shopee ไม่ประกาศเพดานไว้ ตัวเลขตั้งต้นเป็นค่าอนุรักษ์นิยมที่ตั้งเอง
+  $("#account-list").addEventListener("change", (e) => {
+    const input = e.target.closest(".cap-input");
+    if (!input) return;
+    const acc = ACCOUNTS.find((a) => a.id === input.dataset.acc);
+    if (!acc) return;
+    const cap = Math.max(0, Math.min(99, Number(input.value) || 0));
+    if (SERVER.live) {
+      withServer(() => SERVER.call(`/accounts/${acc.id}/cap`, {
+        method: "PUT", body: JSON.stringify({ cap }),
+      }), "ตั้งเพดาน").then((ok) => ok && toast(
+        cap ? `ตั้งเพดาน ${acc.handle} เป็น ${cap} คลิป/วัน` : `ปลดเพดาน ${acc.handle} แล้ว`, "warn"));
+      return;
+    }
+    acc.cap = cap;
+    saveCaps(); renderAccounts(); renderAcctPick(); updateCommit();
+    toast(acc.cap ? `ตั้งเพดาน ${acc.handle} เป็น ${acc.cap} คลิป/วัน` : `ปลดเพดาน ${acc.handle} แล้ว`, "warn");
+  });
+
+  function saveCaps() {
+    try {
+      localStorage.setItem("cq.caps", JSON.stringify(Object.fromEntries(ACCOUNTS.map((a) => [a.id, a.cap]))));
+    } catch (err) { /* blocked storage — caps just reset next visit */ }
+  }
+  function loadCaps() {
+    try {
+      const saved = JSON.parse(localStorage.getItem("cq.caps") || "{}");
+      ACCOUNTS.forEach((a) => { if (typeof saved[a.id] === "number") a.cap = saved[a.id]; });
+    } catch (err) { /* keep defaults */ }
+  }
+
+  /* ---------------- live data ---------------- */
+  let EARNINGS = { lastSync: "", unmatched: 0 };
+  let lastCatalogue = "";
+
+  function adoptJob(row) {
+    const format = FORMATS.find((f) => f.id === row.format.id) || FORMATS[0];
+    const aspect = ASPECTS.find((a) => a.id === row.aspect.id) || ASPECTS[0];
+    const STATE_MAP = { queued: "wait", rendering: "run", ready: "hold", posted: "done", failed: "fail" };
+    return {
+      id: row.id,
+      product: { ...row.product },
+      cast: row.persona,
+      account: row.account,
+      sub: row.sub,
+      format, aspect,
+      status: STATE_MAP[row.status] || "wait",
+      progress: row.progress,
+      cart: row.cart,
+      link: row.link,
+      scheduledAt: new Date(row.scheduledAt),
+      createdAt: new Date(row.createdAt),
+      seed: 0,
+      serverScript: row.script,
+      serverCaption: row.caption,
+      videoUrl: row.video,
+      duration: row.duration,
+      sizeKB: row.sizeKB,
+      error: row.error,
+      stats: row.stats,
+    };
+  }
+
+  async function pullState() {
+    const state = await SERVER.call("/state");
+    EARNINGS = state.earnings || EARNINGS;
+
+    // The poll runs every 2s. Rebuilding the product grid each time would
+    // recreate every <img> and refetch every photo, so only redraw it when the
+    // catalogue actually changed.
+    const signature = state.products.map((p) => `${p.id}:${p.price}:${p.hasPhotos}`).join("|");
+    const catalogueChanged = signature !== lastCatalogue;
+    lastCatalogue = signature;
+
+    PRODUCTS.splice(0, PRODUCTS.length, ...state.products);
+    ACCOUNTS.splice(0, ACCOUNTS.length, ...state.accounts.map((a) => ({
+      id: a.id, handle: a.handle, sub: a.sub, cap: a.cap, used: a.used, hue: a.hue,
+    })));
+    jobs.splice(0, jobs.length, ...state.jobs.map(adoptJob));
+
+    logs.length = 0;
+    state.events.forEach((e) => logs.push({
+      at: new Date(e.at), text: e.message,
+      tag: { ok: "ok", render: "run", warn: "warn", error: "fail" }[e.level] || "ok",
+    }));
+    $("#n-log").textContent = logs.length;
+
+    // a selection can outlive a catalogue refresh
+    [...selected].forEach((id) => { if (!PRODUCTS.some((p) => p.id === id)) selected.delete(id); });
+    cfg.accounts = cfg.accounts.filter((h) => ACCOUNTS.some((a) => a.handle === h));
+    if (!cfg.accounts.length && ACCOUNTS.length) cfg.accounts = [ACCOUNTS[0].handle];
+
+    if (catalogueChanged) renderProducts();
+    syncSelection();
+    renderQueue();
+    renderVideos();
+    renderAccounts();
+    renderAcctPick();
+    if (view === "log") renderLog();
+
+    const running = jobs.find((j) => j.status === "run");
+    $("#worker-text").textContent = running
+      ? `เรนเดอร์ ${running.id} · ${running.progress}%`
+      : (state.counts.queued ? `รออยู่ ${state.counts.queued} งาน` : "worker ว่าง");
+  }
+
+  async function withServer(action, label) {
+    try {
+      await action();
+      await pullState();
+      return true;
+    } catch (err) {
+      toast(`${label}ไม่สำเร็จ · ${err.message}`, "fail");
+      return false;
+    }
+  }
+
+  /* ---------------- navigation ---------------- */
+  function show(next) {
+    view = next;
+    $$(".view").forEach((s) => { s.hidden = s.id !== "view-" + next; });
+    $$(".nav-item").forEach((b) => b.setAttribute("aria-current", String(b.dataset.view === next)));
+    $$(".sub-item[data-view]").forEach((b) => b.setAttribute("aria-current", String(b.dataset.view === next)));
+    if (next !== "make") $$("#sub-make .sub-item").forEach((b) => b.setAttribute("aria-current", "false"));
+    else syncConfig();
+    if (next === "log") renderLog();
+    window.scrollTo({ top: 0 });
+  }
+  $$(".nav-item").forEach((b) => b.addEventListener("click", () => show(b.dataset.view)));
+  $$(".sub-item[data-view]").forEach((b) => b.addEventListener("click", () => show(b.dataset.view)));
+  $$(".nav-group").forEach((b) => b.addEventListener("click", () => {
+    const open = b.getAttribute("aria-expanded") !== "true";
+    b.setAttribute("aria-expanded", String(open));
+    $("#sub-" + b.dataset.group).hidden = !open;
+  }));
+
+  /* ---------------- wiring ---------------- */
+  function bindSwitch(id, key, onChange) {
+    $(id).addEventListener("click", (e) => {
+      const on = e.currentTarget.getAttribute("aria-checked") !== "true";
+      e.currentTarget.setAttribute("aria-checked", String(on));
+      if (key) cfg[key] = on;
+      if (onChange) onChange(on);
+    });
+  }
+  bindSwitch("#f-sub", "subtitle");
+  bindSwitch("#f-bgm", "bgm");
+  bindSwitch("#f-tags", "tags");
+  bindSwitch("#s-llm", null, (on) => toast(on ? "เปิดโหมดเขียนสคริปต์ด้วย Claude" : "กลับไปใช้ template", "warn"));
+  bindSwitch("#s-keep", null);
+
+  $("#f-format").addEventListener("change", (e) => { cfg.format = FORMATS.find((f) => f.id === e.target.value); syncConfig(); });
+  $("#f-aspect").addEventListener("change", (e) => { cfg.aspect = ASPECTS.find((a) => a.id === e.target.value); syncConfig(); });
+  $("#f-cast").addEventListener("change", (e) => { cfg.cast = e.target.value; });
+  $("#f-voice").addEventListener("change", (e) => { cfg.voice = e.target.value; });
+  $("#f-date").addEventListener("change", (e) => { cfg.startDate = e.target.value || iso(new Date()); });
+
+  function setPer(v) {
+    cfg.per = Math.max(1, Math.min(10, v));
+    $("#f-per").value = cfg.per;
+    updateCommit();
+  }
+  $("#per-minus").addEventListener("click", () => setPer(cfg.per - 1));
+  $("#per-plus").addEventListener("click", () => setPer(cfg.per + 1));
+  $("#f-per").addEventListener("change", (e) => setPer(Number(e.target.value) || 1));
+
+  $$("#cart-opts .bigbtn").forEach((b) => b.addEventListener("click", () => {
+    $$("#cart-opts .bigbtn").forEach((x) => x.setAttribute("aria-pressed", "false"));
+    b.setAttribute("aria-pressed", "true");
+    cfg.cart = b.dataset.val === "on";
+  }));
+
+  $("#add-time").addEventListener("click", () => {
+    const input = $("#f-time");
+    if (!input.value) { toast("เลือกเวลาก่อน", "warn"); return; }
+    if (cfg.slots.includes(input.value)) { toast("มีรอบเวลานี้อยู่แล้ว", "warn"); return; }
+    cfg.slots = [...cfg.slots, input.value].sort();
+    input.value = "";
+    renderSlots(); updateCommit();
+  });
+
+  $("#go-pick").addEventListener("click", () => show("products"));
+  $("#clear-linked").addEventListener("click", () => { selected.clear(); syncSelection(); renderProducts(); });
+  $("#btn-commit").addEventListener("click", commit);
+  $("#btn-tomake").addEventListener("click", () => show("make"));
+
+  $("#q").addEventListener("input", (e) => { query = e.target.value; renderProducts(); });
+  $$("[data-sort]").forEach((b) => b.addEventListener("click", () => {
+    sort = b.dataset.sort;
+    $$("[data-sort]").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+    renderProducts();
+  }));
+  $("#btn-clear").addEventListener("click", () => { selected.clear(); syncSelection(); renderProducts(); });
+  $("#btn-all").addEventListener("click", () => {
+    $("#product-grid").dataset.visible.split(",").filter(Boolean).forEach((id) => selected.add(id));
+    syncSelection(); renderProducts();
+  });
+  $("#btn-sync").addEventListener("click", runImport);
+
+  $("#vq").addEventListener("input", (e) => { vQuery = e.target.value; renderVideos(); });
+  $$("[data-vfilter]").forEach((b) => b.addEventListener("click", () => {
+    vFilter = b.dataset.vfilter;
+    $$("[data-vfilter]").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+    renderVideos();
+  }));
+  $("#vsort").addEventListener("click", (e) => {
+    vSort = vSort === "created" ? "scheduled" : "created";
+    e.currentTarget.textContent = vSort === "created" ? "เรียงตาม: สร้างล่าสุด" : "เรียงตาม: กำหนดอัป";
+    renderVideos();
+  });
+
+  $("#btn-pause").addEventListener("click", (e) => {
+    paused = !paused;
+    e.currentTarget.textContent = paused ? "เริ่ม worker" : "หยุด worker";
+    $("#worker-text").textContent = paused ? "worker หยุดอยู่" : "worker ว่าง";
+    $("#pulse").style.background = paused ? "var(--wait)" : "var(--ok)";
+    log(paused ? "หยุด worker" : "เริ่ม worker", "warn");
+  });
+  $("#btn-sync-stats").addEventListener("click", async (e) => {
+    const button = e.currentTarget;
+    button.disabled = true;
+    button.textContent = "กำลังดึง…";
+    try {
+      const result = await SERVER.call("/stats/sync?days=14", { method: "POST" });
+      await pullState();
+      renderVideos();
+      toast(`ดึงรายงาน ${result.rows} รายการ · จับคู่คลิปได้ ${result.matched}`
+        + (result.unmatched ? ` · ไม่ใช่ลิงก์จากระบบนี้ ${result.unmatched}` : ""));
+    } catch (err) {
+      toast(`ดึงรายงานไม่สำเร็จ · ${err.message}`, "fail");
+    } finally {
+      button.disabled = false;
+      button.textContent = "ดึงผลลัพธ์จาก Shopee";
+    }
+  });
+
+  $("#btn-clearlog").addEventListener("click", () => {
+    if (SERVER.live) {
+      withServer(() => SERVER.call("/events", { method: "DELETE" }), "ล้าง log");
+      return;
+    }
+    logs.length = 0; $("#n-log").textContent = 0; renderLog();
+  });
+
+  /* ---------------- theme ---------------- */
+  // dark is the default now, so an unset attribute means dark — not "ask the OS"
+  function applyTheme(mode) {
+    document.documentElement.setAttribute("data-theme", mode);
+    try { localStorage.setItem("cq.theme", mode); } catch (err) { /* blocked storage */ }
+  }
+  $("#btn-theme").addEventListener("click", () => {
+    const now = document.documentElement.getAttribute("data-theme") || "dark";
+    applyTheme(now === "dark" ? "light" : "dark");
+  });
+  try {
+    const saved = localStorage.getItem("cq.theme");
+    if (saved === "dark" || saved === "light") document.documentElement.setAttribute("data-theme", saved);
+  } catch (err) { /* fall back to the system setting */ }
+
+  /* ---------------- Shopee connection (POC form) ---------------- */
+  $("#copy-redirect").addEventListener("click", () => {
+    const value = $("#s-redirect").value;
+    const fallback = () => { $("#s-redirect").select(); toast("เลือกให้แล้ว กด Ctrl+C", "warn"); };
+    try { navigator.clipboard.writeText(value).then(() => toast("คัดลอก endpoint แล้ว"), fallback); }
+    catch (err) { fallback(); }
+  });
+
+  $("#btn-test").addEventListener("click", () => {
+    const appId = $("#s-appid").value.trim();
+    const hasSecret = $("#s-secret").value.length > 0;
+    const badge = $("#conn-status");
+    const note = $("#conn-note");
+
+    if (!appId || !hasSecret) {
+      badge.className = "status s-fail";
+      badge.textContent = "ข้อมูลไม่ครบ";
+      note.textContent = !appId ? "ยังไม่ได้ใส่ App ID" : "ยังไม่ได้ใส่ App Secret";
+      log("ทดสอบการเชื่อมต่อไม่ผ่าน · ข้อมูลไม่ครบ", "fail");
+      return;
+    }
+
+    badge.className = "status s-run";
+    badge.textContent = "กำลังทดสอบ";
+    note.textContent = "กำลังขอ access token…";
+    setTimeout(() => {
+      badge.className = "status s-done";
+      badge.textContent = "เชื่อมแล้ว";
+      note.textContent = `App ID ${appId} · ลายเซ็นผ่าน · พร้อมดึงสินค้าและย่อลิงก์`;
+      // App Secret deliberately never reaches storage; only the App ID is kept
+      try { localStorage.setItem("cq.appid", appId); } catch (err) { /* blocked storage */ }
+      toast("เชื่อมต่อ Shopee Affiliate สำเร็จ (จำลอง)");
+    }, 900);
+  });
+
+  try {
+    const savedId = localStorage.getItem("cq.appid");
+    if (savedId) $("#s-appid").value = savedId;
+  } catch (err) { /* blocked storage */ }
+
+  /* ---------------- boot ---------------- */
+  loadCaps();
+  fillSelects();
+  renderProducts();
+  syncSelection();
+  renderQueue();
+  renderVideos();
+  renderAccounts();
+  syncConfig();
+  log("พร้อมใช้งาน · โหลดคิวเดิม " + jobs.length + " คลิป");
+  renderLog();
+
+  function setMode(live, note) {
+    $("#mode-dot").style.background = live ? "var(--ok)" : "var(--wait)";
+    $("#mode-text").textContent = live ? "ต่อเซิร์ฟเวอร์แล้ว" : "โหมดสาธิต";
+    $("#mode-badge").title = note;
+    $("#btn-commit").textContent = live ? $("#btn-commit").textContent : "+ เพิ่มลงคิว (สาธิต)";
+  }
+
+  (async function connect() {
+    const live = await SERVER.detect();
+    if (!live) {
+      setMode(false, "ไม่ได้เปิดผ่านเซิร์ฟเวอร์ ข้อมูลทั้งหมดเป็นตัวอย่างและไม่ถูกบันทึก");
+      log("ไม่พบ API บน origin นี้ · ใช้ข้อมูลตัวอย่าง", "warn");
+      renderLog();
+      return;
+    }
+
+    setMode(true, `ffmpeg: ${SERVER.health.ffmpeg ? "พร้อม" : "ไม่พบ"}`
+      + (SERVER.health.fake_render ? " · โหมดเรนเดอร์จำลอง" : ""));
+    $("#btn-sync-stats").hidden = false;
+    if (!SERVER.health.ffmpeg) {
+      toast("เซิร์ฟเวอร์ไม่มี ffmpeg — งานจะล้มเหลวตอนเรนเดอร์", "warn");
+    }
+
+    try {
+      await pullState();
+    } catch (err) {
+      setMode(false, err.message);
+      toast(`โหลดข้อมูลจากเซิร์ฟเวอร์ไม่สำเร็จ · ${err.message}`, "fail");
+      return;
+    }
+
+    // poll while the tab is visible; a hidden tab costs the server nothing
+    let failures = 0;
+    setInterval(async () => {
+      if (paused || document.hidden || !SERVER.live) return;
+      try {
+        await pullState();
+        failures = 0;
+      } catch (err) {
+        if (++failures === 3) toast("ขาดการติดต่อกับเซิร์ฟเวอร์", "fail");
+      }
+    }, 2000);
+  })();
+})();
+</script>

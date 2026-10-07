@@ -1,0 +1,11 @@
+# เก็บเป็น LF ใน repo แต่เช็คเอาต์เป็นแบบของแต่ละระบบ
+* text=auto
+
+# PowerShell ต้องมี CRLF และ BOM — Windows PowerShell 5.1 อ่าน .ps1 เป็น ANSI
+# ถ้าไม่มี BOM ทำให้ตัวอักษรไทยเพี้ยนจน parse ไม่ผ่าน
+*.ps1 text eol=crlf
+
+*.mp3 binary
+*.mp4 binary
+*.jpg binary
+*.png binary

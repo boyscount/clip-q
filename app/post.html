@@ -1,0 +1,296 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>อัปคลิป · ClipQueue</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bai+Jamjuree:wght@600;700&family=IBM+Plex+Sans+Thai:wght@400;500;600&display=swap">
+<style>
+:root {
+  --bg: #0E0F12; --surface: #16181D; --surface-2: #1E2128; --line: #2C313A;
+  --fg: #F1F3F6; --fg-dim: #A6ACB8; --fg-mute: #6E7480;
+  --accent: #F5A524; --accent-2: #FFCB5B; --accent-fg: #1A1200;
+  --ok: #35C28D; --ok-soft: #10281F; --fail: #FF6B6B;
+  --display: "Bai Jamjuree", sans-serif;
+  --body: "IBM Plex Sans Thai", "Leelawadee UI", system-ui, sans-serif;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+body {
+  margin: 0; background: var(--bg); color: var(--fg); font-family: var(--body);
+  font-size: 15px; line-height: 1.6;
+  padding: calc(16px + env(safe-area-inset-top, 0px)) 16px calc(24px + env(safe-area-inset-bottom, 0px));
+  max-width: 560px; margin-inline: auto;
+}
+button { font: inherit; color: inherit; border: none; cursor: pointer; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+header { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
+.mark { width: 30px; height: 30px; border-radius: 9px; flex: none; display: grid; place-items: center;
+        background: linear-gradient(140deg, var(--accent-2), var(--accent)); color: var(--accent-fg); font-weight: 700; }
+h1 { font-family: var(--display); font-size: 17px; margin: 0; }
+.sub { font-size: 12px; color: var(--fg-mute); }
+.count { margin-left: auto; font-size: 12px; color: var(--accent-2); white-space: nowrap; }
+
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 16px; margin-bottom: 14px; }
+.step { display: flex; gap: 11px; align-items: flex-start; }
+.n { width: 24px; height: 24px; border-radius: 50%; flex: none; display: grid; place-items: center;
+     background: var(--surface-2); color: var(--accent-2); font-size: 12px; font-weight: 700; }
+.step h2 { font-size: 14.5px; margin: 0 0 2px; font-weight: 600; }
+.step p { margin: 0; font-size: 12.5px; color: var(--fg-mute); }
+.body { flex: 1; min-width: 0; }
+
+.btn {
+  display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%;
+  padding: 15px; border-radius: 11px; font-size: 15px; font-weight: 600;
+  background: var(--surface-2); border: 1px solid var(--line); color: var(--fg); margin-top: 11px;
+}
+.btn:active { transform: scale(.985); }
+.btn-primary { background: linear-gradient(140deg, var(--accent-2), var(--accent)); border-color: var(--accent); color: var(--accent-fg); font-weight: 700; }
+.btn-done { background: var(--ok-soft); border-color: var(--ok); color: var(--ok); }
+.btn:disabled { opacity: .45; }
+
+.caption {
+  background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px;
+  padding: 12px; margin-top: 11px; font-size: 13.5px; line-height: 1.65;
+  white-space: pre-wrap; word-break: break-word; max-height: 190px; overflow-y: auto;
+}
+video { width: 100%; border-radius: 11px; margin-top: 11px; background: #000; max-height: 46vh; }
+.meta { display: flex; gap: 8px; flex-wrap: wrap; font-size: 11.5px; color: var(--fg-mute); margin-top: 9px; }
+.chip { background: var(--surface-2); border-radius: 999px; padding: 2px 10px; }
+.empty { text-align: center; padding: 56px 20px; color: var(--fg-mute); }
+.empty .big { font-size: 40px; margin-bottom: 10px; }
+.toast {
+  position: fixed; left: 50%; transform: translateX(-50%);
+  bottom: calc(22px + env(safe-area-inset-bottom, 0px)); z-index: 20;
+  background: var(--fg); color: var(--bg); padding: 11px 20px; border-radius: 999px;
+  font-size: 14px; font-weight: 600; box-shadow: 0 8px 28px rgba(0,0,0,.5);
+}
+.note { font-size: 12px; color: var(--fg-mute); margin-top: 10px; }
+.note code { background: var(--surface-2); padding: 1px 6px; border-radius: 5px; font-size: 11.5px; }
+a { color: var(--accent-2); }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="mark">⚡</div>
+  <div>
+    <h1>อัปคลิปขึ้น Shopee</h1>
+    <div class="sub" id="sub">กำลังโหลด…</div>
+  </div>
+  <div class="count" id="count"></div>
+</header>
+
+<main id="main"></main>
+
+<script>
+(function () {
+  "use strict";
+
+  const $ = (s) => document.querySelector(s);
+  const token = (() => {
+    const fromUrl = new URLSearchParams(location.search).get("token");
+    if (fromUrl) {
+      try { localStorage.setItem("cq.token", fromUrl); } catch (e) { /* blocked */ }
+      history.replaceState(null, "", location.pathname);  // keep it out of the address bar
+      return fromUrl;
+    }
+    try { return localStorage.getItem("cq.token") || ""; } catch (e) { return ""; }
+  })();
+
+  const headers = { "Content-Type": "application/json", Authorization: `Bearer ${token}` };
+  let current = null;
+
+  function toast(text) {
+    const el = document.createElement("div");
+    el.className = "toast";
+    el.textContent = text;
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), 2400);
+  }
+
+  async function load() {
+    if (!token) {
+      // The notification link deliberately carries no token — anyone who can
+      // read the notification topic would get permanent access. So the phone
+      // is set up once, here, by pasting it.
+      $("#sub").textContent = "ตั้งค่าครั้งแรก";
+      $("#main").innerHTML = `<div class="card"><div class="step">
+        <div class="n">!</div>
+        <div class="body">
+          <h2>ใส่ token ครั้งเดียว</h2>
+          <p>หลังจากนี้กดจากแจ้งเตือนได้เลย ไม่ต้องใส่อีก</p>
+          <input id="tok" type="text" inputmode="text" autocomplete="off"
+                 autocapitalize="off" autocorrect="off" spellcheck="false"
+                 placeholder="วาง token ที่นี่"
+                 style="width:100%;padding:14px;margin-top:11px;border-radius:11px;
+                        border:1px solid var(--line);background:var(--surface-2);
+                        color:var(--fg);font-size:15px">
+          <button class="btn btn-primary" id="save">บันทึกแล้วเข้าใช้งาน</button>
+          <p class="note">หา token ได้จากคอมพิวเตอร์ด้วย<br>
+            <code>python -m server.admin list</code> แสดงผู้ใช้ แต่ไม่โชว์ token<br>
+            ถ้าจำไม่ได้ให้ออกใหม่ด้วย <code>rotate-token</code></p>
+        </div>
+      </div></div>`;
+
+      $("#save").addEventListener("click", () => {
+        const value = $("#tok").value.trim();
+        if (!value) { toast("ยังไม่ได้ใส่ token"); return; }
+        try { localStorage.setItem("cq.token", value); } catch (e) { /* blocked */ }
+        location.href = location.pathname;
+      });
+      $("#tok").addEventListener("keydown", (e) => {
+        if (e.key === "Enter") $("#save").click();
+      });
+      return;
+    }
+
+    let data;
+    try {
+      const res = await fetch("/api/next", { headers, cache: "no-store" });
+      if (res.status === 401) {
+        // a stored token that no longer works should send us back to setup,
+        // not leave the page stuck on an error forever
+        try { localStorage.removeItem("cq.token"); } catch (e) { /* blocked */ }
+        $("#sub").textContent = "token ใช้ไม่ได้แล้ว";
+        $("#main").innerHTML = `<div class="empty"><div class="big">🔑</div>
+          token นี้ใช้ไม่ได้แล้ว<br>
+          <span class="note">อาจถูกเปลี่ยนไปแล้ว · โหลดหน้านี้ใหม่เพื่อใส่ token ใหม่</span><br><br>
+          <button class="btn" onclick="location.reload()">ใส่ token ใหม่</button></div>`;
+        return;
+      }
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      data = await res.json();
+    } catch (err) {
+      $("#sub").textContent = "ต่อเซิร์ฟเวอร์ไม่ได้";
+      $("#main").innerHTML = `<div class="empty"><div class="big">📡</div>
+        ${err.message}<br><span class="note">ต้องอยู่วงเน็ตเดียวกับเครื่องที่รันเซิร์ฟเวอร์</span></div>`;
+      return;
+    }
+
+    $("#count").textContent = data.waiting ? `รออยู่ ${data.waiting} คลิป` : "";
+    if (!data.clip) {
+      current = null;
+      $("#sub").textContent = "ไม่มีคลิปรออัป";
+      $("#main").innerHTML = `<div class="empty"><div class="big">✓</div>
+        อัปครบแล้ว<br><span class="note">คลิปถัดไปจะโผล่ที่นี่เมื่อเรนเดอร์เสร็จ</span></div>`;
+      return;
+    }
+
+    current = data.clip;
+    $("#sub").textContent = `${current.account} · กำหนด ${fmt(current.scheduledAt)}`;
+    render(current);
+  }
+
+  function fmt(iso) {
+    try {
+      return new Date(iso).toLocaleString("th-TH",
+        { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+    } catch (e) { return iso; }
+  }
+
+  function render(clip) {
+    $("#main").innerHTML = `
+      <div class="card">
+        <div class="step">
+          <div class="n">1</div>
+          <div class="body">
+            <h2>ตรวจคลิป</h2>
+            <p>${clip.product}</p>
+            <video controls preload="metadata" playsinline id="vid"></video>
+            <div class="meta">
+              <span class="chip">${clip.duration ? clip.duration.toFixed(1) + " วิ" : "—"}</span>
+              <span class="chip">${clip.sizeKB ? Math.round(clip.sizeKB / 1024 * 10) / 10 + " MB" : "—"}</span>
+              <span class="chip">${clip.id}</span>
+            </div>
+            ${clip.outboxName ? `<p class="note">ในมือถือหาไฟล์ชื่อ <code>${clip.outboxName}</code></p>` : ""}
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="step">
+          <div class="n">2</div>
+          <div class="body">
+            <h2>คัดลอกแคปชัน</h2>
+            <p>มีลิงก์ปักตะกร้าอยู่ในนี้แล้ว</p>
+            <div class="caption" id="cap">${clip.caption || "(ไม่มีแคปชัน)"}</div>
+            <button class="btn btn-primary" id="copy">คัดลอกแคปชัน</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="step">
+          <div class="n">3</div>
+          <div class="body">
+            <h2>อัปในแอป Shopee</h2>
+            <p>Shopee Video → อัปคลิป → วางแคปชัน → ปักตะกร้า</p>
+            <button class="btn" id="open">เปิดแอป Shopee</button>
+            <button class="btn btn-done" id="done">อัปแล้ว · ไปคลิปถัดไป</button>
+          </div>
+        </div>
+      </div>`;
+
+    // the video sits behind the API's auth header, which <video src> cannot send
+    const video = $("#vid");
+    if (clip.video) {
+      fetch(clip.video, { headers })
+        .then((r) => (r.ok ? r.blob() : Promise.reject(new Error(String(r.status)))))
+        .then((b) => { video.src = URL.createObjectURL(b); })
+        .catch(() => { video.outerHTML = '<p class="note">โหลดคลิปตัวอย่างไม่ได้ · ใช้ไฟล์ที่ซิงก์ลงมือถือแทน</p>'; });
+    }
+
+    $("#copy").addEventListener("click", async () => {
+      const text = $("#cap").textContent;
+      try {
+        await navigator.clipboard.writeText(text);
+        toast("คัดลอกแล้ว");
+      } catch (err) {
+        const range = document.createRange();
+        range.selectNodeContents($("#cap"));
+        const sel = getSelection();
+        sel.removeAllRanges();
+        sel.addRange(range);
+        toast("เลือกข้อความให้แล้ว กดค้างเพื่อคัดลอก");
+      }
+    });
+
+    $("#open").addEventListener("click", () => {
+      // a custom scheme may do nothing on this device, so always offer the web fallback
+      const started = Date.now();
+      location.href = "shopeeth://";
+      setTimeout(() => {
+        if (Date.now() - started < 2000) {
+          toast("เปิดแอปไม่ได้ · เปิดเองจากหน้าจอหลัก");
+        }
+      }, 1200);
+    });
+
+    $("#done").addEventListener("click", async (e) => {
+      const button = e.currentTarget;
+      button.disabled = true;
+      button.textContent = "กำลังบันทึก…";
+      try {
+        const res = await fetch(`/api/jobs/${clip.id}/posted`, { method: "POST", headers });
+        if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || res.status);
+        toast("บันทึกแล้ว");
+        await load();
+        scrollTo({ top: 0 });
+      } catch (err) {
+        toast(`บันทึกไม่สำเร็จ · ${err.message}`);
+        button.disabled = false;
+        button.textContent = "อัปแล้ว · ไปคลิปถัดไป";
+      }
+    });
+  }
+
+  load();
+  // a clip can finish rendering while this page is open
+  setInterval(() => { if (!document.hidden && !current) load(); }, 15000);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,21 @@
+# สภาพแวดล้อมและค่าลับ
+.venv/
+.env
+__pycache__/
+*.pyc
+
+# ข้อมูลที่รันแล้วเกิดขึ้น — ฐานข้อมูล คลิปที่เรนเดอร์ ไฟล์สำรอง
+data/
+out/
+
+# สินค้าและรูปที่ดึงมาจาก Shopee (ของจริงของแต่ละร้าน)
+app/products.json
+app/bullets-cache.json
+app/assets/products/
+assets/images/
+
+# ไฟล์มีเดียตัวอย่าง ~21 MB — สร้างใหม่ได้ด้วย
+#   python tools/make_preview_audio.py
+#   python tools/make_preview_video.py
+app/assets/*.mp3
+app/assets/*.mp4

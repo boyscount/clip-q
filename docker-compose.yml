@@ -1,0 +1,36 @@
+services:
+  api:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8787:8787"   # bind to loopback; Caddy terminates TLS in front
+    volumes:
+      - clipqueue-data:/data
+      - ./app/assets/products:/srv/app/assets/products:ro
+    environment:
+      CLIPQUEUE_WORKER: "0"     # the api serves; the worker service renders
+      CLIPQUEUE_DEMO_TOKEN: ${CLIPQUEUE_DEMO_TOKEN:?ตั้งค่านี้ใน .env ก่อนขึ้นจริง}
+      CLIPQUEUE_RATE_LIMIT: "120"
+      SHOPEE_APP_ID: ${SHOPEE_APP_ID:-}
+      SHOPEE_APP_SECRET: ${SHOPEE_APP_SECRET:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+
+  worker:
+    build: .
+    restart: unless-stopped
+    command: ["python", "-m", "server.worker"]
+    volumes:
+      - clipqueue-data:/data
+      - ./app/assets/products:/srv/app/assets/products:ro
+    environment:
+      CLIPQUEUE_POLL: "2"
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    # one render pins one core; scale to the number of cores you can spare:
+    #   docker compose up -d --scale worker=3
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+
+volumes:
+  clipqueue-data:
