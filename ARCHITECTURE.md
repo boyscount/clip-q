@@ -342,4 +342,38 @@ python -m server.stats show                    # คลิปไหนทำเ�
 python tools/fetch_products.py --mock --limit 6
 python tools/backup.py --keep 14
 python tools/prune.py --days 30 --dry-run
+
+python tools/to_phone.py --check               # adb/scrcpy/มือถือพร้อมไหม
+python tools/to_phone.py --mirror              # ส่งคลิปเข้ามือถือ + เปิด scrcpy
 ```
+
+---
+
+## 13. ขั้นอัปขึ้น Shopee
+
+Shopee ไม่เปิด API สำหรับอัป Shopee Video และ `creator.shopee.co.th` (เว็บหลังบ้าน
+ของครีเอเตอร์) ก็ไม่มีช่องอัปวิดีโอ — **ตรวจแล้ว** ขั้นสุดท้ายจึงต้องทำผ่านแอปมือถือ
+
+`tools/to_phone.py` ย่นขั้นตอนนั้นด้วยช่องทางที่ Android และ Shopee เปิดไว้เอง
+
+| ทำอะไร | กลไก |
+|---|---|
+| ส่งไฟล์เข้ามือถือ | `adb push` ไป `/sdcard/Movies/ClipQueue` |
+| ให้แกลเลอรีเห็น | broadcast `MEDIA_SCANNER_SCAN_FILE` (Android 10+ อาจไม่สน แต่เปิดจากแอปไฟล์ได้) |
+| แคปชันพร้อมวาง | ใส่คลิปบอร์ดของคอม — scrcpy ซิงก์สองทาง กด Ctrl+V ในมือถือได้เลย |
+| เปิดหน้าแชร์ | `ACTION_SEND` ชี้ไปที่แพ็กเกจ Shopee (`--share`) |
+| คุมมือถือจากคอม | `scrcpy` (`--mirror`) |
+
+**ไม่มีการจำลองการกดปุ่มในแอป Shopee** — การสวมรอยเข้า UI ของแอปผิดเงื่อนไข
+affiliate และเป็นสาเหตุหลักที่บัญชีโดนตัดสิทธิ์ สคริปต์นี้ส่งไฟล์กับข้อความให้พร้อม
+แล้วคุณกดเอง
+
+ต้องติดตั้งก่อน
+
+```bash
+winget install Google.PlatformTools    # adb
+winget install Genymobile.scrcpy
+```
+
+และเปิด USB debugging ในมือถือ (ตั้งค่า > เกี่ยวกับโทรศัพท์ > กดหมายเลขบิลด์ 7 ครั้ง
+→ ตัวเลือกสำหรับนักพัฒนา > การแก้จุดบกพร่อง USB)
