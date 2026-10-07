@@ -62,10 +62,14 @@ EXTRAS = [
 TARGETS = {"quick": 16, "show": 24, "story": 42}
 
 
-def _beats(product: dict, fmt: str, rnd: random.Random) -> tuple[list[str], list[tuple[int, str]]]:
+def _beats(product: dict, fmt: str, rnd: random.Random,
+           style=None) -> tuple[list[str], list[tuple[int, str]]]:
     """Return (fixed beats, optional beats as (insert_position, text))."""
     price = f"{product['price']:,}"
-    hook = rnd.choice(HOOKS).format(name=product["name"], price=price)
+    # แนวที่มี hook ของตัวเองใช้ของตัวเอง แนวที่ไม่มีใช้กองกลาง
+    hooks = list(getattr(style, "hooks", ()) or ()) or HOOKS
+    closings = list(getattr(style, "closings", ()) or ()) or CLOSINGS
+    hook = rnd.choice(hooks).format(name=product["name"], price=price)
     cta = CTA_FREE if product.get("free") else CTA
     fixed = [hook, cta]
 
@@ -78,7 +82,7 @@ def _beats(product: dict, fmt: str, rnd: random.Random) -> tuple[list[str], list
         optional.append((1, DISCOUNT.format(was=f"{product['was']:,}")))
     if len(bullets) > 1:
         optional.append((3, bullets[1]))
-    optional.append((90, rnd.choice(CLOSINGS)))
+    optional.append((90, rnd.choice(closings)))
     if len(bullets) > 2:
         optional.append((4, bullets[2]))
     if fmt == "story":
@@ -89,12 +93,12 @@ def _beats(product: dict, fmt: str, rnd: random.Random) -> tuple[list[str], list
 
 
 def plan_lines(product: dict, fmt: str = "quick", target: float | None = None,
-               seed: int | None = None) -> list[str]:
+               seed: int | None = None, style=None) -> list[str]:
     """Pick the set of beats whose estimated duration lands closest to target."""
     target = TARGETS.get(fmt, 24) if target is None else target
     m = speech.model()
     rnd = random.Random(seed)
-    (hook, cta), optional = _beats(product, fmt, rnd)
+    (hook, cta), optional = _beats(product, fmt, rnd, style)
 
     chosen: list[tuple[int, str]] = []
 
@@ -120,12 +124,13 @@ def plan_lines(product: dict, fmt: str = "quick", target: float | None = None,
     return assemble()
 
 
-def build_llm_script(product: dict, fmt: str = "quick") -> str:
+def build_llm_script(product: dict, fmt: str = "quick", style=None) -> str:
     from anthropic import Anthropic
 
     target = TARGETS.get(fmt, 24)
     m = speech.model()
     budget = int((target - m["per_line"] * 7) / m["per_char"])
+    tone = getattr(style, "tone", "") or "ภาษาพูดแบบคนรีวิวจริง"
 
     prompt = textwrap.dedent(f"""
         เขียนสคริปต์พูดสำหรับคลิปรีวิวสินค้าแนวตั้ง
@@ -135,10 +140,12 @@ def build_llm_script(product: dict, fmt: str = "quick") -> str:
         จุดขาย:
         {chr(10).join('- ' + b for b in product.get('bullets', []))}
 
+        น้ำเสียงที่ต้องการ: {tone}
+
         กติกา
         - ความยาวเมื่อพูดจริงต้องได้ประมาณ {target} วินาที
         - รวมทุกบรรทัดแล้วต้องอยู่ที่ประมาณ {budget} ตัวอักษร ห้ามเกิน {int(budget * 1.1)}
-        - ภาษาพูดแบบคนรีวิวจริง ไม่ใช่โฆษณาแข็ง ๆ
+        - ไม่ใช่โฆษณาแข็ง ๆ
         - ประโยคสั้น หนึ่งบรรทัดหนึ่งประโยค
         - บรรทัดแรกต้องเป็น hook ที่หยุดนิ้วคนดูได้ใน 2 วินาที
         - ปิดท้ายด้วย: {CTA_FREE if product.get('free') else CTA}
@@ -155,12 +162,12 @@ def build_llm_script(product: dict, fmt: str = "quick") -> str:
 
 
 def build_script(product: dict, mode: str = "template", seed: int | None = None,
-                 fmt: str = "quick") -> str:
+                 fmt: str = "quick", style=None) -> str:
     if mode == "llm":
         if not os.environ.get("ANTHROPIC_API_KEY"):
             raise SystemExit("mode=llm ต้องตั้ง ANTHROPIC_API_KEY ก่อน")
-        return build_llm_script(product, fmt)
-    return "\n".join(plan_lines(product, fmt, seed=seed))
+        return build_llm_script(product, fmt, style)
+    return "\n".join(plan_lines(product, fmt, seed=seed, style=style))
 
 
 if __name__ == "__main__":

@@ -13,6 +13,8 @@ from datetime import date, timedelta
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from src.style import DEFAULT as DEFAULT_STYLE, STYLES
+
 FORMATS = {"quick": 16, "show": 24, "story": 42}
 ASPECTS = {"9:16": (1080, 1920), "4:5": (1080, 1350), "1:1": (1080, 1080)}
 VOICES = {"female", "male"}
@@ -36,6 +38,7 @@ class QueueRequest(BaseModel):
     format: str
     aspect: str
     persona: str = Field(min_length=1, max_length=60)
+    style: str = DEFAULT_STYLE
     voice: str = "female"
     per: int = Field(default=1, ge=1, le=MAX_PER)
     cart: bool = True
@@ -78,6 +81,13 @@ class QueueRequest(BaseModel):
     def _known_aspect(cls, value: str) -> str:
         if value not in ASPECTS:
             raise ValueError(f"สัดส่วนต้องเป็นอย่างใดอย่างหนึ่งใน {sorted(ASPECTS)}")
+        return value
+
+    @field_validator("style")
+    @classmethod
+    def _known_style(cls, value: str) -> str:
+        if value not in STYLES:
+            raise ValueError(f"แนวคลิปต้องเป็นอย่างใดอย่างหนึ่งใน {sorted(STYLES)}")
         return value
 
     @field_validator("voice")

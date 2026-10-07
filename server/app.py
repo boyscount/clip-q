@@ -129,9 +129,12 @@ async def _service_error(_: Request, exc: service.ServiceError):
 def health() -> dict:
     import shutil
 
+    from src import style as styles
+
     from . import notify, outbox
     return {
         "ok": True,
+        "styles": styles.choices(),
         "ffmpeg": bool(shutil.which("ffmpeg")),
         "worker": START_WORKER,
         "fake_render": worker.FAKE,

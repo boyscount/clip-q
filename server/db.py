@@ -72,6 +72,7 @@ CREATE TABLE IF NOT EXISTS jobs (
   format        TEXT NOT NULL,
   aspect        TEXT NOT NULL,
   persona       TEXT NOT NULL,
+  style         TEXT NOT NULL DEFAULT 'clean',
   voice         TEXT NOT NULL,
   cart          INTEGER NOT NULL DEFAULT 1,
   status        TEXT NOT NULL DEFAULT 'queued',
@@ -185,6 +186,7 @@ def tx():
 # version keeps its old shape and every query touching a new column fails.
 MIGRATIONS: list[tuple[str, str, str]] = [
     ("jobs", "sub_id", "TEXT NOT NULL DEFAULT ''"),
+    ("jobs", "style", "TEXT NOT NULL DEFAULT 'clean'"),
 ]
 
 
@@ -378,9 +380,9 @@ def product(user_id: str, product_id: str) -> dict | None:
 def insert_jobs(rows: list[dict]) -> None:
     connect().executemany(
         "INSERT INTO jobs (id,user_id,batch_id,product_id,account_id,sub_id,format,aspect,"
-        "persona,voice,cart,status,progress,scheduled_at,created_at,link) "
+        "persona,style,voice,cart,status,progress,scheduled_at,created_at,link) "
         "VALUES (:id,:user_id,:batch_id,:product_id,:account_id,:sub_id,:format,:aspect,"
-        ":persona,:voice,:cart,'queued',0,:scheduled_at,:created_at,:link)",
+        ":persona,:style,:voice,:cart,'queued',0,:scheduled_at,:created_at,:link)",
         rows,
     )
 

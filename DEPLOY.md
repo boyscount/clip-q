@@ -283,6 +283,7 @@ python tools/test_server.py    # 107 เคส: auth, ดักข้อมู�
 python tools/test_stats.py     # 50 เคส: รายงาน conversion, เงิน, การจับคู่ sub-id
 python tools/test_handoff.py   # 38 เคส: โฟลเดอร์ซิงก์, แจ้งเตือน, หน้ามือถือ
 python tools/test_persona.py   # 31 เคส: ช็อตคน สัดส่วน การเรียงสลับสินค้า
+python tools/test_style.py     # 63 เคส: แนวคลิป เกรดสี ทรานซิชัน สายพาน
 python tools/test_bullets.py   # ตัวเขียนจุดขาย
 ```
 

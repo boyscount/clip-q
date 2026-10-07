@@ -123,6 +123,7 @@ def plan_schedule(req: QueueRequest, accounts: list[dict], products: list[dict])
                     "format": req.format,
                     "aspect": req.aspect,
                     "persona": req.persona,
+                    "style": req.style,
                     "voice": req.voice,
                     "cart": 1 if req.cart else 0,
                     "scheduled_at": when.isoformat(timespec="seconds"),
@@ -180,6 +181,14 @@ def create_queue(user_id: str, req: QueueRequest) -> dict:
     }
 
 
+def style_view(row) -> dict:
+    """แนวของงานหนึ่ง — งานเก่าที่สร้างก่อนมีคอลัมน์นี้จะได้แนวเรียบ"""
+    from src import style as styles
+
+    chosen = styles.get(row["style"] if "style" in row.keys() else None)
+    return {"id": chosen.id, "name": chosen.name}
+
+
 def job_view(user_id: str, row, stats: dict | None = None) -> dict:
     import json
 
@@ -204,6 +213,7 @@ def job_view(user_id: str, row, stats: dict | None = None) -> dict:
         "format": {"id": row["format"], "sec": fmt, "target": fmt},
         "aspect": {"id": row["aspect"], "w": w, "h": h},
         "persona": row["persona"],
+        "style": style_view(row),
         "voice": row["voice"],
         "cart": bool(row["cart"]),
         "link": row["link"],

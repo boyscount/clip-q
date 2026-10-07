@@ -77,22 +77,29 @@ def is_video(path: Path) -> bool:
 
 
 def interleave(product_shots: list[Path], persona_shots: list[Path],
-               count: int | None = None) -> list[Path]:
+               count: int | None = None, share: float | None = None) -> list[Path]:
     """เรียงช็อตให้คนเปิดและปิดคลิป ส่วนกลางเป็นสินค้า
 
     เปิดด้วยหน้าคนเพราะคนดูหยุดนิ้วกับหน้าคนมากกว่ากล่องสินค้า และปิดด้วยคน
     ตอนพูด CTA เพราะเป็นจังหวะที่ขอให้กดตะกร้า ตรงกลางปล่อยให้สินค้าเล่าตัวเอง
+
+    share ทับสัดส่วนตั้งต้นเฉพาะครั้งนั้น — แนวคลิปใช้ช่องนี้บอกว่าอยากได้คน
+    มากหรือน้อยกว่าค่ากลาง share=0 คือไม่ใส่คนเลย
     """
     if not product_shots:
         return list(persona_shots)
     if not persona_shots:
         return list(product_shots)
 
+    want = PERSON_SHARE if share is None else min(0.8, max(0.0, share))
+    if want <= 0:
+        return list(product_shots)
+
     total = max(2, count or len(product_shots))
 
-    # สัดส่วนคนตาม PERSON_SHARE แต่ไม่เกินจำนวนไฟล์ที่มีจริง และต้องเหลือ
+    # สัดส่วนคนตาม share แต่ไม่เกินจำนวนไฟล์ที่มีจริง และต้องเหลือ
     # ช่องให้สินค้าอย่างน้อยหนึ่งช็อต — คลิปที่ไม่เห็นสินค้าเลยขายไม่ได้
-    want_person = min(len(persona_shots), total - 1, max(1, round(total * PERSON_SHARE)))
+    want_person = min(len(persona_shots), total - 1, max(1, round(total * want)))
 
     slots = {0}                                   # ช็อตแรกเป็นคนเสมอ
     if want_person > 1:

@@ -34,9 +34,11 @@ FAKE = os.environ.get("CLIPQUEUE_FAKE_RENDER") == "1"
 _stop = threading.Event()
 
 
-def caption_for(product: dict, link: str, cart: bool) -> str:
-    tags = ["#ของดีบอกต่อ", "#ShopeeTH", "#ตะกร้าส้ม",
+def caption_for(product: dict, link: str, cart: bool, style=None) -> str:
+    tags = ["#ShopeeTH", "#ตะกร้าส้ม",
             "#ส่งฟรี" if product.get("free") else "#ของมันต้องมี"]
+    # แท็กของแนวมาก่อน เพื่อให้คลิปแต่ละแนวไปโผล่ในฟีดคนละกลุ่ม
+    tags = [*(getattr(style, "tags", ()) or ("#ของดีบอกต่อ",)), *tags]
     head = f"{product['name']} เหลือ {product['price']:,} บาท"
     if product.get("was"):
         head += f" (ปกติ {product['was']:,})"
@@ -56,14 +58,16 @@ def photos_for(product_id: str, count: int) -> list[Path]:
 
 def render(job) -> dict:
     """Run the pipeline for one job. Returns the fields to store."""
-    from src import images, persona, render as renderer, script_gen, speech, subtitle, voice
+    from src import (images, persona, render as renderer, script_gen, speech,
+                     style as styles, subtitle, voice)
 
     user_id = job["user_id"]
     product = db.product(user_id, job["product_id"])
     if product is None:
         raise RuntimeError("สินค้าถูกลบไปแล้วระหว่างรอคิว")
 
-    lines = script_gen.plan_lines(product, job["format"], seed=None)
+    style = styles.get(job["style"] if "style" in job.keys() else None)
+    lines = script_gen.plan_lines(product, job["format"], seed=None, style=style)
     db.set_progress(job["id"], 10)
 
     if FAKE:
@@ -74,7 +78,8 @@ def render(job) -> dict:
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_bytes(b"fake-mp4")
         return {
-            "script": lines, "caption": caption_for(product, job["link"], bool(job["cart"])),
+            "script": lines,
+            "caption": caption_for(product, job["link"], bool(job["cart"]), style),
             "duration": speech.estimate(lines), "size_kb": 1, "video_path": str(out),
         }
 
@@ -93,8 +98,14 @@ def render(job) -> dict:
 
         # ช็อตคนจาก app/assets/personas/<ชื่อตัวละคร>/ — ไม่มีก็ใช้สินค้าล้วน
         people = persona.shots(job["persona"])
-        if people:
-            shots = persona.interleave(shots, people)
+        if people and style.belt:
+            # สายพานคือภาพไหลต่อเนื่อง ไม่มีช็อต จึงไม่มีที่ให้แทรกคน
+            db.log(job["user_id"],
+                   f"แนว{style.name}ใช้ภาพสินค้าล้วน ข้ามช็อต {job['persona']}",
+                   "warn", job["id"])
+            people = []
+        elif people:
+            shots = persona.interleave(shots, people, share=style.person_share)
             used = [s for s in shots if s in people]
             moving = sum(1 for s in used if persona.is_video(s))
             db.log(job["user_id"],
@@ -103,7 +114,9 @@ def render(job) -> dict:
 
         ass = subtitle.write_ass(work / "captions.ass", cues, product, total, w, h)
         db.set_progress(job["id"], 60)
-        visual = renderer.build_visual(shots, total, work, w, h, people=set(people))
+        db.log(job["user_id"], f"แนว{style.name}", "info", job["id"])
+        visual = renderer.build_visual(shots, total, work, w, h,
+                                       people=set(people), style=style)
         db.set_progress(job["id"], 85)
 
         RENDERS.mkdir(parents=True, exist_ok=True)
@@ -112,7 +125,7 @@ def render(job) -> dict:
 
     return {
         "script": lines,
-        "caption": caption_for(product, job["link"], bool(job["cart"])),
+        "caption": caption_for(product, job["link"], bool(job["cart"]), style),
         "duration": total,
         "size_kb": round(out.stat().st_size / 1024),
         "video_path": str(out),

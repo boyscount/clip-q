@@ -655,6 +655,12 @@ table.vids tbody tr:hover { background: var(--surface-2); }
               <div class="ctl-hint" id="per-hint"></div>
             </div>
 
+            <div class="ctl">
+              <label for="f-style">แนวคลิป</label>
+              <select class="input" id="f-style"></select>
+              <div class="ctl-hint" id="style-hint"></div>
+            </div>
+
             <div class="ctl-2">
               <div class="ctl">
                 <label for="f-cast">ตัวละคร</label>
@@ -1075,6 +1081,15 @@ table.vids tbody tr:hover { background: var(--surface-2); }
     { name: "ไม่ใช้ตัวละคร", note: "ใช้ภาพสินค้าล้วน · เรนเดอร์เร็วกว่าประมาณ 40%", hue: 40, clips: 134 },
   ];
 
+  /* แนวคลิป — ต้องตรงกับ src/style.py เสมอ เซิร์ฟเวอร์ส่งรายการจริงมาทาง
+     /api/health ตอนต่อเซิร์ฟเวอร์ ชุดนี้ใช้ตอนเล่นแบบไม่ต่อ */
+  let STYLES = [
+    { id: "clean",      name: "เรียบ โชว์สินค้า", note: "สีตรงตามรูปจริง ข้ามภาพนุ่ม ๆ · ปลอดภัยที่สุด ใช้ได้กับทุกหมวด" },
+    { id: "influencer", name: "อินฟลูรีวิว",      note: "สีอุ่นผิวสวย ตัดไว คนเยอะกว่าปกติ · ต้องมีไฟล์ตัวละคร" },
+    { id: "warehouse",  name: "โกดังของถูก",      note: "สีเข้มคอนทราสต์จัด ตัดแข็งไม่มีรอยต่อ · โทนขายส่ง ของเยอะราคาถูก" },
+    { id: "conveyor",   name: "สายพาน",           note: "ภาพสินค้าไหลต่อเนื่องแนวนอน ไม่มีรอยตัด · ใช้ภาพสินค้าล้วน" },
+  ];
+
   const ACCOUNTS = [
     { id: "A1", handle: "@deedeeshop",   sub: "sub_main",  cap: 5, used: 2, hue: 20 },
     { id: "A2", handle: "@deedee.clips", sub: "sub_clip",  cap: 4, used: 1, hue: 200 },
@@ -1231,7 +1246,7 @@ table.vids tbody tr:hover { background: var(--surface-2); }
 
   const cfg = {
     format: FORMATS[0], aspect: ASPECTS[0], per: 1,
-    cast: CAST[0].name, voice: "หญิง",
+    cast: CAST[0].name, style: STYLES[0].id, voice: "หญิง",
     subtitle: true, bgm: false, tags: true, cart: true,
     accounts: [ACCOUNTS[0].handle],
     startDate: iso(new Date()),
@@ -1442,6 +1457,7 @@ table.vids tbody tr:hover { background: var(--surface-2); }
     $("#f-aspect").innerHTML = ASPECTS.map((a) =>
       `<option value="${a.id}">${a.id} (${a.w}×${a.h}) — ${a.note}</option>`).join("");
     $("#f-cast").innerHTML = CAST.map((c) => `<option value="${c.name}">${c.name}</option>`).join("");
+    fillStyles();
 
     $("#sub-make").innerHTML = FORMATS.map((f) =>
       `<button class="sub-item" data-format="${f.id}">${f.name}<small>${f.sec} วิ</small></button>`).join("");
@@ -1456,6 +1472,20 @@ table.vids tbody tr:hover { background: var(--surface-2); }
     $("#f-date").min = cfg.startDate;
     renderSlots();
     renderAcctPick();
+  }
+
+  /* เรียกซ้ำได้ เพราะรายการแนวจริงมาจากเซิร์ฟเวอร์หลังหน้าเว็บโหลดไปแล้ว */
+  function fillStyles() {
+    if (!STYLES.some((s) => s.id === cfg.style)) cfg.style = STYLES[0].id;
+    $("#f-style").innerHTML = STYLES.map((s) =>
+      `<option value="${s.id}">${s.name}</option>`).join("");
+    $("#f-style").value = cfg.style;
+    showStyleHint();
+  }
+
+  function showStyleHint() {
+    const picked = STYLES.find((s) => s.id === cfg.style);
+    $("#style-hint").textContent = picked ? picked.note : "";
   }
 
   function renderSlots() {
@@ -1553,6 +1583,7 @@ table.vids tbody tr:hover { background: var(--surface-2); }
           format: cfg.format.id,
           aspect: cfg.aspect.id,
           persona: cfg.cast,
+          style: cfg.style,
           voice: cfg.voice === "ชาย" ? "male" : "female",
           per: cfg.per,
           cart: cfg.cart,
@@ -2252,6 +2283,7 @@ table.vids tbody tr:hover { background: var(--surface-2); }
   $("#f-format").addEventListener("change", (e) => { cfg.format = FORMATS.find((f) => f.id === e.target.value); syncConfig(); });
   $("#f-aspect").addEventListener("change", (e) => { cfg.aspect = ASPECTS.find((a) => a.id === e.target.value); syncConfig(); });
   $("#f-cast").addEventListener("change", (e) => { cfg.cast = e.target.value; });
+  $("#f-style").addEventListener("change", (e) => { cfg.style = e.target.value; showStyleHint(); });
   $("#f-voice").addEventListener("change", (e) => { cfg.voice = e.target.value; });
   $("#f-date").addEventListener("change", (e) => { cfg.startDate = e.target.value || iso(new Date()); });
 
@@ -2423,6 +2455,12 @@ table.vids tbody tr:hover { background: var(--surface-2); }
       log("ไม่พบ API บน origin นี้ · ใช้ข้อมูลตัวอย่าง", "warn");
       renderLog();
       return;
+    }
+
+    // แนวคลิปที่เซิร์ฟเวอร์รู้จักจริง ชนะชุดตัวอย่างที่ฝังมาในหน้า
+    if (Array.isArray(SERVER.health.styles) && SERVER.health.styles.length) {
+      STYLES = SERVER.health.styles;
+      fillStyles();
     }
 
     setMode(true, `ffmpeg: ${SERVER.health.ffmpeg ? "พร้อม" : "ไม่พบ"}`
