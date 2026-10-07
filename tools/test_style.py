@@ -1,4 +1,4 @@
-"""ทดสอบแนวคลิป — ทะเบียนแนว การเลือกใช้ และคำสั่ง ffmpeg ที่ประกอบออกมา
+﻿"""ทดสอบแนวคลิป — ทะเบียนแนว การเลือกใช้ และคำสั่ง ffmpeg ที่ประกอบออกมา
 
 ไม่เรียก ffmpeg จริง แค่ตรวจว่าสตริงฟิลเตอร์ที่ประกอบได้ถูกต้อง
 
@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import sys
+import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -108,10 +109,13 @@ def main() -> int:
 
     print("\n7. เกรดสีถูกทาลงในคำสั่ง ffmpeg")
     original = render.ff.run
+    # ตัดแข็งเขียนไฟล์รายการช็อตลง workdir จริง ต้องไม่ไปตกในโฟลเดอร์โปรเจกต์
+    tmp = tempfile.TemporaryDirectory()
+    work = Path(tmp.name)
     try:
         for name in ("clean", "influencer", "warehouse"):
             rec = render.ff.run = Recorder()
-            render.build_visual(P("a.jpg", "b.jpg"), 8.0, Path("."), style=name)
+            render.build_visual(P("a.jpg", "b.jpg"), 8.0, work, style=name)
             grade = style.get(name).grade
             check(f"'{name}' ใส่เกรดสีลงทุกช็อต",
                   rec.joined().count(grade) >= 2 if grade != style.PASSTHROUGH
@@ -119,7 +123,7 @@ def main() -> int:
 
         print("\n8. ข้ามภาพนุ่ม ๆ กับตัดแข็ง ใช้คำสั่งคนละแบบ")
         rec = render.ff.run = Recorder()
-        render.build_visual(P("a.jpg", "b.jpg", "c.jpg"), 9.0, Path("."), style="clean")
+        render.build_visual(P("a.jpg", "b.jpg", "c.jpg"), 9.0, work, style="clean")
         joined = rec.joined()
         check("แนวเรียบใช้ xfade", "xfade=transition=fade" in joined, True)
         check("ไม่ใช้ concat แล้ว", "-f concat" in joined, False)
@@ -128,7 +132,7 @@ def main() -> int:
         check("ช็อตที่สองเริ่มซ้อนตรงเวลา", "offset=2.900" in joined, True)
 
         rec = render.ff.run = Recorder()
-        render.build_visual(P("a.jpg", "b.jpg", "c.jpg"), 9.0, Path("."), style="warehouse")
+        render.build_visual(P("a.jpg", "b.jpg", "c.jpg"), 9.0, work, style="warehouse")
         joined = rec.joined()
         check("แนวโกดังตัดแข็ง ไม่มี xfade", "xfade" in joined, False)
         check("ตัดแข็งต่อไฟล์ตรง ๆ", "-f concat" in joined, True)
@@ -136,7 +140,7 @@ def main() -> int:
 
         print("\n9. สายพาน")
         rec = render.ff.run = Recorder()
-        render.build_visual(P("a.jpg", "b.jpg", "c.jpg"), 12.0, Path("."), style="conveyor")
+        render.build_visual(P("a.jpg", "b.jpg", "c.jpg"), 12.0, work, style="conveyor")
         check("ยิง ffmpeg ครั้งเดียว ไม่ตัดเป็นช็อต", len(rec.calls), 1)
         joined = rec.joined()
         check("ไม่มี xfade และไม่มี concat",
@@ -150,29 +154,30 @@ def main() -> int:
 
         print("\n10. กรณีขอบ")
         rec = render.ff.run = Recorder()
-        render.build_visual(P("a.jpg"), 6.0, Path("."), style="clean")
+        render.build_visual(P("a.jpg"), 6.0, work, style="clean")
         check("ช็อตเดียว ไม่ต้องข้ามภาพ", "xfade" in rec.joined(), False)
 
         rec = render.ff.run = Recorder()
-        render.build_visual(P("a.jpg"), 6.0, Path("."), style="conveyor")
+        render.build_visual(P("a.jpg"), 6.0, work, style="conveyor")
         check("สายพานการ์ดใบเดียวก็ยังวนได้", "hstack=inputs=2" in rec.joined(), True)
 
         try:
-            render.build_visual([], 6.0, Path("."), style="clean")
+            render.build_visual([], 6.0, work, style="clean")
             check("ไม่มีช็อตต้องโยน error", False, True)
         except ValueError:
             check("ไม่มีช็อตต้องโยน error", True, True)
 
         rec = render.ff.run = Recorder()
-        render.build_visual(P("a.jpg", "b.jpg"), 8.0, Path("."), style="ไม่มีแนวนี้")
+        render.build_visual(P("a.jpg", "b.jpg"), 8.0, work, style="ไม่มีแนวนี้")
         check("แนวที่ไม่รู้จัก ยังเรนเดอร์ได้ด้วยแนวเรียบ",
               "xfade=transition=fade" in rec.joined(), True)
 
         rec = render.ff.run = Recorder()
-        render.build_visual(P("a.jpg", "b.jpg"), 8.0, Path("."), style=style.get("conveyor"))
+        render.build_visual(P("a.jpg", "b.jpg"), 8.0, work, style=style.get("conveyor"))
         check("ส่ง Style object มาตรง ๆ ก็ได้", "hstack" in rec.joined(), True)
     finally:
         render.ff.run = original
+        tmp.cleanup()
 
     print(f"\nผ่าน {PASS} · ไม่ผ่าน {FAIL}")
     return 1 if FAIL else 0
