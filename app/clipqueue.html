@@ -1012,6 +1012,53 @@ table.vids tbody tr:hover { background: var(--surface-2); }
           </div>
         </div>
 
+        <div class="panel" style="grid-column:1/-1">
+          <div class="panel-head">สร้างช็อตคนด้วย AI ของ Google</div>
+          <div class="panel-body">
+            <div class="ctl-hint" style="margin-bottom:10px">
+              Google Flow เป็นเว็บแอปตัดต่อ ไม่มี API ให้เรียก ที่นี่จึงต่อผ่าน
+              <b>Gemini API</b> ซึ่งใช้โมเดลตระกูลเดียวกัน (Veo กับ Nano Banana)
+              คีย์ขอได้ที่ Google AI Studio
+            </div>
+
+            <div class="ctl">
+              <label for="s-gkey">Google API Key</label>
+              <input class="input" id="s-gkey" type="password" placeholder="วางคีย์จาก Google AI Studio" autocomplete="off">
+              <div class="ctl-hint">ไม่ถูกบันทึกลงเบราว์เซอร์ · ตัวจริงต้องอยู่ใน <code class="num">.env</code> ที่ <code class="num">GOOGLE_API_KEY</code></div>
+            </div>
+
+            <div class="ctl-2">
+              <div class="ctl">
+                <label for="s-gimage">โมเดลภาพนิ่ง</label>
+                <select class="input" id="s-gimage"></select>
+                <div class="ctl-hint" id="gimage-hint"></div>
+              </div>
+              <div class="ctl">
+                <label for="s-gvideo">โมเดลวิดีโอ</label>
+                <select class="input" id="s-gvideo"></select>
+                <div class="ctl-hint" id="gvideo-hint"></div>
+              </div>
+            </div>
+
+            <div class="ctl">
+              <div class="ctl-k">บรรทัดที่ต้องใส่ใน .env</div>
+              <div style="display:flex;gap:7px">
+                <input class="input" id="s-genv" type="text" readonly>
+                <button class="btn btn-sm" type="button" id="copy-genv">คัดลอก</button>
+              </div>
+              <div class="ctl-hint">วางต่อท้ายไฟล์ <code class="num">.env</code> แล้วรีสตาร์ตเซิร์ฟเวอร์</div>
+            </div>
+
+            <div class="row" style="padding:11px 13px">
+              <div class="row-main">
+                <h3 style="font-size:12.5px">สถานะ</h3>
+                <p id="gstat-note">ยังไม่ได้ต่อเซิร์ฟเวอร์</p>
+              </div>
+              <span class="status s-wait" id="gstat-badge">ยังไม่พร้อม</span>
+            </div>
+          </div>
+        </div>
+
         <div class="panel">
           <div class="panel-head">การเรนเดอร์</div>
           <div class="panel-body">
@@ -1128,6 +1175,25 @@ table.vids tbody tr:hover { background: var(--surface-2); }
     { id: "shop",     name: "ชื่อร้านที่ส่ง" },
   ];
   let SHOT_RANGE = [3, 18];
+
+  /* โมเดล AI ของ Google — ต้องตรงกับ src/aigen.py เซิร์ฟเวอร์ส่งรายการจริงมา
+     ทาง /api/health พร้อมรุ่นที่ .env ตั้งไว้ */
+  let GOOGLE = {
+    image: [
+      { id: "gemini-3-pro-image", name: "Nano Banana Pro", note: "คุณภาพสูงสุด · คุมหน้าให้เหมือนเดิมได้ดีที่สุด · แพงและช้ากว่า" },
+      { id: "gemini-3.1-flash-image", name: "Nano Banana 2", note: "สมดุลราคากับคุณภาพ · เหมาะกับงานประจำวัน" },
+      { id: "gemini-3.1-flash-lite-image", name: "Flash Lite", note: "ถูกและเร็วที่สุด · เหมาะกับลองไอเดียก่อนสั่งตัวจริง" },
+      { id: "gemini-2.5-flash-image", name: "Flash 2.5 (รุ่นเก่า)", note: "รุ่นก่อนหน้า · ใช้ได้ถ้าของใหม่ยังไม่เปิดให้บัญชีคุณ" },
+    ],
+    video: [
+      { id: "veo-3.1-generate-preview", name: "Veo 3.1", note: "คุณภาพสูงสุด · ภาพคนเคลื่อนไหวเนียนที่สุด · แพงที่สุดต่อวินาที" },
+      { id: "veo-3.1-fast-generate-preview", name: "Veo 3.1 Fast", note: "เร็วกว่าและถูกกว่า · คุณภาพลดลงเล็กน้อย" },
+      { id: "veo-3.1-lite-generate-preview", name: "Veo 3.1 Lite", note: "ถูกที่สุด · เหมาะกับช็อตสั้นที่ไม่ใช่พระเอกของคลิป" },
+    ],
+    imageModel: "gemini-3.1-flash-image",
+    videoModel: "veo-3.1-fast-generate-preview",
+    hasKey: false,
+  };
 
   const ACCOUNTS = [
     { id: "A1", handle: "@deedeeshop",   sub: "sub_main",  cap: 5, used: 2, hue: 20 },
@@ -1509,6 +1575,7 @@ table.vids tbody tr:hover { background: var(--surface-2); }
     fillShots();
     $("#f-script").value = cfg.scriptMode;
     showScriptHint();
+    fillGoogle();
 
     $("#sub-make").innerHTML = FORMATS.map((f) =>
       `<button class="sub-item" data-format="${f.id}">${f.name}<small>${f.sec} วิ</small></button>`).join("");
@@ -1583,6 +1650,46 @@ table.vids tbody tr:hover { background: var(--surface-2); }
     $("#script-hint").textContent = SERVER.live && SERVER.health && !SERVER.health.hasClaudeKey
       ? "ยังไม่ได้ตั้ง ANTHROPIC_API_KEY — จะถอยไปใช้เทมเพลตให้เอง"
       : "เสียค่า API ต่อคลิป · ถ้าเรียกไม่สำเร็จจะถอยไปใช้เทมเพลต";
+  }
+
+  /* เรียกซ้ำได้ เพราะรายการจริงมาจากเซิร์ฟเวอร์หลังหน้าเว็บโหลดไปแล้ว */
+  function fillGoogle() {
+    const put = (sel, list, picked) => {
+      sel.innerHTML = list.map((m) =>
+        `<option value="${m.id}">${m.name}</option>`).join("");
+      sel.value = list.some((m) => m.id === picked) ? picked : list[0].id;
+    };
+    put($("#s-gimage"), GOOGLE.image, GOOGLE.imageModel);
+    put($("#s-gvideo"), GOOGLE.video, GOOGLE.videoModel);
+    showGoogle();
+  }
+
+  function showGoogle() {
+    const img = GOOGLE.image.find((m) => m.id === $("#s-gimage").value);
+    const vid = GOOGLE.video.find((m) => m.id === $("#s-gvideo").value);
+    $("#gimage-hint").textContent = img ? img.note : "";
+    $("#gvideo-hint").textContent = vid ? vid.note : "";
+    // บรรทัด .env ให้คัดลอกไปวางได้เลย ไม่ต้องจำชื่อตัวแปร
+    $("#s-genv").value =
+      `GOOGLE_IMAGE_MODEL=${$("#s-gimage").value}  GOOGLE_VIDEO_MODEL=${$("#s-gvideo").value}`;
+
+    const badge = $("#gstat-badge");
+    const note = $("#gstat-note");
+    if (!SERVER.live) {
+      badge.className = "status s-wait";
+      badge.textContent = "โหมดสาธิต";
+      note.textContent = "ยังไม่ได้ต่อเซิร์ฟเวอร์ · ค่าที่เลือกตรงนี้ยังไม่ถูกใช้";
+      return;
+    }
+    if (!GOOGLE.hasKey) {
+      badge.className = "status s-wait";
+      badge.textContent = "ยังไม่มีคีย์";
+      note.textContent = "ตั้ง GOOGLE_API_KEY ใน .env แล้วรีสตาร์ตเซิร์ฟเวอร์";
+      return;
+    }
+    badge.className = "status s-done";
+    badge.textContent = "มีคีย์แล้ว";
+    note.textContent = "คีย์พร้อม · ยังไม่ได้ต่อปุ่มสั่งสร้างภาพ (ขั้นถัดไป)";
   }
 
   function renderSlots() {
@@ -2405,6 +2512,16 @@ table.vids tbody tr:hover { background: var(--surface-2); }
   $("#f-style").addEventListener("change", (e) => { cfg.style = e.target.value; showStyleHint(); syncConfig(); });
   $("#f-shots").addEventListener("change", (e) => { cfg.shots = Number(e.target.value); showShotsHint(); syncConfig(); });
   $("#f-script").addEventListener("change", (e) => { cfg.scriptMode = e.target.value; showScriptHint(); });
+  $("#s-gimage").addEventListener("change", showGoogle);
+  $("#s-gvideo").addEventListener("change", showGoogle);
+  $("#copy-genv").addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText($("#s-genv").value.replace(/\s{2,}/g, "\n"));
+      toast("คัดลอกแล้ว วางต่อท้าย .env ได้เลย");
+    } catch (err) {
+      toast("คัดลอกไม่สำเร็จ · เลือกข้อความแล้วกดคัดลอกเอง", "warn");
+    }
+  });
   $("#f-voice").addEventListener("change", (e) => { cfg.voice = e.target.value; });
   $("#f-date").addEventListener("change", (e) => { cfg.startDate = e.target.value || iso(new Date()); });
 
@@ -2592,6 +2709,10 @@ table.vids tbody tr:hover { background: var(--surface-2); }
       fillShots();
     }
     showScriptHint();
+    if (SERVER.health.google) {
+      GOOGLE = SERVER.health.google;
+      fillGoogle();
+    }
 
     setMode(true, `ffmpeg: ${SERVER.health.ffmpeg ? "พร้อม" : "ไม่พบ"}`
       + (SERVER.health.fake_render ? " · โหมดเรนเดอร์จำลอง" : ""));

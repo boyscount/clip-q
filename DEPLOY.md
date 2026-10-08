@@ -298,6 +298,7 @@ python tools/test_handoff.py   # 38 เคส: โฟลเดอร์ซิง
 python tools/test_persona.py   # 32 เคส: ช็อตคน สัดส่วน การเรียงสลับสินค้า
 python tools/test_style.py     # 63 เคส: แนวคลิป เกรดสี ทรานซิชัน สายพาน
 python tools/test_facts.py     # 30 เคส: ข้อมูลที่ให้สคริปต์พูดถึง
+python tools/test_aigen.py     # 27 เคส: ทะเบียนโมเดล AI ของ Google
 python tools/test_bullets.py   # ตัวเขียนจุดขาย
 ```
 

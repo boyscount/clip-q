@@ -130,7 +130,7 @@ async def _service_error(_: Request, exc: service.ServiceError):
 def health() -> dict:
     import shutil
 
-    from src import script_gen, style as styles
+    from src import aigen, script_gen, style as styles
 
     from . import notify, outbox
     return {
@@ -139,6 +139,7 @@ def health() -> dict:
         "facts": [{"id": k, "name": v} for k, v in script_gen.FACTS.items()],
         "shotRange": [MIN_SHOTS, MAX_SHOTS],
         "hasClaudeKey": bool(os.environ.get("ANTHROPIC_API_KEY")),
+        "google": aigen.choices(),
         "ffmpeg": bool(shutil.which("ffmpeg")),
         "worker": START_WORKER,
         "fake_render": worker.FAKE,

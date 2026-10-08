@@ -159,6 +159,16 @@ def check_secrets() -> None:
     else:
         line(WARN, "คีย์ Anthropic", "จุดขายจะใช้ยอดขาย/เรตติ้งแทน")
 
+    from src import aigen
+    g = aigen.status()
+    if g["unknownModels"]:
+        line(WARN, "โมเดล Google", "ไม่รู้จักชื่อรุ่นใน " + ", ".join(g["unknownModels"])
+             + " — ถอยไปใช้ค่าตั้งต้น")
+    elif g["hasKey"]:
+        line(OK, "คีย์ Google", f"ภาพ {g['imageModel']} · วิดีโอ {g['videoModel']}")
+    else:
+        line(WARN, "คีย์ Google", "ยังไม่ได้ตั้ง — สร้างช็อตคนด้วย AI ไม่ได้")
+
     if os.environ.get("CLIPQUEUE_DEMO_TOKEN"):
         line(WARN, "CLIPQUEUE_DEMO_TOKEN ถูกตั้งไว้",
              "เซิร์ฟเวอร์จะสร้างผู้ใช้ตัวอย่าง — ปลดออกก่อนใช้จริง")
