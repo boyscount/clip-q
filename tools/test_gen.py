@@ -123,6 +123,14 @@ def main() -> int:
             check("โควตา 0 → บอกให้ไปเปิด billing", "billing" in str(exc), True)
             check("และบอกว่ารุ่นไหน", "gemini-3.1-flash-image" in str(exc), True)
 
+        try:
+            aigen.generate_images("x", 1, session=Stub(Resp(402, {"error": {"message":
+                "Your prepayment credits are depleted."}})))
+            check("เครดิตหมดต้องโยน error", False, True)
+        except aigen.GenError as exc:
+            check("เครดิตหมด → บอกให้ไปเติมที่ AI Studio",
+                  "เติมเครดิต" in str(exc) and "ai.studio" in str(exc), True)
+
         for status, word in ((403, "สิทธิ"), (400, "รูปแบบ"), (500, "HTTP 500")):
             try:
                 aigen.generate_images("x", 1, session=Stub(

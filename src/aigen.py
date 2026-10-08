@@ -216,6 +216,9 @@ def _explain(resp, model: str) -> str:
     except Exception:  # noqa: BLE001
         message = resp.text[:200]
 
+    if resp.status_code == 402:
+        return ("เครดิตใน Google AI Studio หมด — เติมเครดิตที่"
+                " https://ai.studio/projects แล้วลองใหม่")
     if resp.status_code == 429 and "limit: 0" in message:
         return (f"บัญชี Google ยังไม่เปิด billing จึงสร้างภาพไม่ได้เลย"
                 f" (โควตาฟรีของ {model} เป็น 0) — เปิด billing ในโปรเจกต์"
