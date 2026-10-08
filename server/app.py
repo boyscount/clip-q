@@ -27,7 +27,7 @@ load_env()
 
 from . import db, service, worker  # noqa: E402
 from .models import (ASPECTS, FORMATS, MAX_SHOTS, MIN_SHOTS, CapRequest,  # noqa: E402
-                     QueueRequest)
+                     GenerateShotsRequest, QueueRequest)
 
 ROOT = Path(__file__).resolve().parent.parent
 APP_DIR = ROOT / "app"
@@ -236,6 +236,41 @@ def put_cap(account_id: str, req: CapRequest, user=Depends(current_user)) -> dic
         raise HTTPException(404, "ไม่พบบัญชีนี้")
     db.log(user["id"], f"ตั้งเพดาน {account_id} เป็น {req.cap or 'ไม่จำกัด'} คลิป/วัน", "warn")
     return {"ok": True, "cap": req.cap}
+
+
+@app.post("/api/personas/generate")
+def post_generate_shots(req: GenerateShotsRequest, user=Depends(current_user)) -> dict:
+    """สร้างช็อตคนด้วย AI แล้วเซฟลงโฟลเดอร์ตัวละคร
+
+    เสียเงินจริงต่อภาพ จึงเรียกได้เฉพาะเมื่อผู้ใช้กดเอง ไม่มีการเรียกอัตโนมัติ
+    ระหว่างเรนเดอร์
+    """
+    from src import aigen, scene as scenes
+
+    product_name = ""
+    if req.product_id:
+        found = db.product(user["id"], req.product_id)
+        if found is None:
+            raise HTTPException(404, f"ไม่พบสินค้า {req.product_id} ในคลังของผู้ใช้นี้")
+        product_name = found["name"]
+
+    prompt = aigen.build_prompt(req.scene, req.look, product_name)
+    try:
+        images = aigen.generate_images(prompt, req.count)
+        saved = aigen.save_shots(req.persona, req.scene, images)
+    except aigen.GenError as exc:
+        db.log(user["id"], f"สร้างช็อตคนด้วย AI ไม่สำเร็จ · {exc}", "error")
+        raise HTTPException(502, str(exc)) from exc
+
+    where = scenes.folder_name(req.scene) or "โฟลเดอร์หลัก"
+    db.log(user["id"],
+           f"สร้างช็อต {req.persona} ด้วย AI {len(saved)} รูป · {where}", "ok")
+    return {
+        "saved": [p.name for p in saved],
+        "folder": where,
+        "model": aigen.image_model(),
+        "prompt": prompt,
+    }
 
 
 @app.get("/api/stats")

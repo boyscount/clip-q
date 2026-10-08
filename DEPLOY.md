@@ -291,7 +291,7 @@ docker compose up -d --build
 ## 7. ทดสอบ
 
 ```bash
-python tools/test_server.py    # 137 เคส: auth, ดักข้อมูล, แยกผู้ใช้, คิว, worker,
+python tools/test_server.py    # 149 เคส: auth, ดักข้อมูล, แยกผู้ใช้, คิว, worker,
                                #          path traversal, อัปเกรด DB, โหมดสาธารณะ
 python tools/test_stats.py     # 50 เคส: รายงาน conversion, เงิน, การจับคู่ sub-id
 python tools/test_handoff.py   # 38 เคส: โฟลเดอร์ซิงก์, แจ้งเตือน, หน้ามือถือ
@@ -300,6 +300,7 @@ python tools/test_style.py     # 63 เคส: แนวคลิป เกร�
 python tools/test_facts.py     # 30 เคส: ข้อมูลที่ให้สคริปต์พูดถึง
 python tools/test_aigen.py     # 27 เคส: ทะเบียนโมเดล AI ของ Google
 python tools/test_talk_scene.py # 47 เคส: สไตล์การพูดและสไตล์วิดีโอ
+python tools/test_gen.py       # 36 เคส: สร้างช็อตคนด้วย AI (ไม่ยิง Google จริง)
 python tools/test_bullets.py   # ตัวเขียนจุดขาย
 ```
 

@@ -414,6 +414,35 @@ def main() -> int:
               ["bullets", "discount", "free", "shop", "sold"])
         check("health บอกช่วงจำนวนช็อต", c.get("/api/health").json()["shotRange"], [3, 18])
 
+        section("10.7 ปลายทางสร้างช็อตคนด้วย AI")
+        bad = [
+            ("ไม่ใส่ชื่อตัวละคร", {"persona": "", "count": 1}),
+            ("ชื่อตัวละครพาออกนอกโฟลเดอร์", {"persona": "../../etc", "count": 1}),
+            ("ชื่อตัวละครเป็นจุดจุด", {"persona": "..", "count": 1}),
+            ("ฉากไม่รู้จัก", {"persona": "mild", "scene": "อวกาศ"}),
+            ("ขอเกินเพดาน", {"persona": "mild", "count": 99}),
+            ("ขอศูนย์ภาพ", {"persona": "mild", "count": 0}),
+            ("ฟิลด์แปลกปลอม", {"persona": "mild", "surprise": "x"}),
+        ]
+        for label, body in bad:
+            check(label + " → 422",
+                  c.post("/api/personas/generate", json=body, headers=auth_a).status_code, 422)
+        check("ไม่ส่ง token → 401",
+              c.post("/api/personas/generate", json={"persona": "mild"}).status_code, 401)
+        check("สินค้าของคนอื่น → 404",
+              c.post("/api/personas/generate", json={"persona": "mild", "product_id": "B-1"},
+                     headers=auth_a).status_code, 404)
+        # เครื่องที่รันเทสอาจมีคีย์จริงหรือไม่มีก็ได้ ทั้งสองทางต้องได้ 502
+        # พร้อมข้อความที่บอกว่าต้องไปทำอะไร ไม่ใช่ 500 เปล่า ๆ
+        res = c.post("/api/personas/generate",
+                     json={"persona": "ทดสอบ", "count": 1}, headers=auth_a)
+        check("สร้างไม่ได้ → 502 ไม่ใช่ 500", res.status_code, 502)
+        detail = res.json()["detail"]
+        check("และบอกว่าต้องไปทำอะไรต่อ",
+              any(w in detail for w in ("GOOGLE_API_KEY", "billing", "โควตา", "สิทธิ")),
+              True, )
+        check("ไม่หลุดคีย์ออกมาใน error", "AIza" in detail, False)
+
         section("11. Log")
         before = len(c.get("/api/state", headers=auth_a).json()["events"])
         check("มี log สะสมไว้", before > 0, True)

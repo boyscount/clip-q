@@ -920,6 +920,62 @@ table.vids tbody tr:hover { background: var(--surface-2); }
       </div>
       <div class="rows" id="cast-list" style="margin-bottom:12px"></div>
       <div class="dropzone">ลากรูปมาวาง หรือกดเพื่อเลือกไฟล์ · JPG/PNG ด้านละอย่างน้อย 1024px</div>
+
+      <div class="panel" style="margin-top:12px">
+        <div class="panel-head">สร้างช็อตคนด้วย AI</div>
+        <div class="panel-body">
+          <div class="ctl-hint" style="margin-bottom:10px">
+            ใช้โมเดลภาพของ Google ที่ตั้งไว้ในหน้า Settings · <b>เสียเงินจริงต่อภาพ</b>
+            ไฟล์ที่ได้จะถูกเซฟลง <code class="num">app/assets/personas/&lt;ตัวละคร&gt;/</code>
+            ชื่อขึ้นต้น <code class="num">ai_</code> ใช้เรนเดอร์ได้ทันที
+          </div>
+
+          <div class="ctl-2">
+            <div class="ctl">
+              <label for="g-cast">ตัวละคร</label>
+              <input class="input" id="g-cast" type="text" placeholder="เช่น mild" autocomplete="off">
+              <div class="ctl-hint">ชื่อโฟลเดอร์ที่จะเก็บ · ไม่มีก็สร้างให้</div>
+            </div>
+            <div class="ctl">
+              <label for="g-scene">ฉาก</label>
+              <select class="input" id="g-scene"></select>
+              <div class="ctl-hint" id="g-scene-hint"></div>
+            </div>
+          </div>
+
+          <div class="ctl">
+            <label for="g-look">รูปลักษณ์ตัวละคร</label>
+            <input class="input" id="g-look" type="text" autocomplete="off"
+                   placeholder="เช่น a Thai woman in her mid-20s, long dark hair, white tank top">
+            <div class="ctl-hint">พิมพ์อังกฤษได้ผลตรงกว่า · เว้นว่างได้ ระบบใส่ค่ากลางให้</div>
+          </div>
+
+          <div class="ctl-2">
+            <div class="ctl">
+              <label for="g-product">ให้ถือสินค้า</label>
+              <select class="input" id="g-product"></select>
+            </div>
+            <div class="ctl">
+              <label for="g-count">จำนวนภาพ</label>
+              <select class="input" id="g-count">
+                <option value="1">1 ภาพ</option>
+                <option value="2">2 ภาพ</option>
+                <option value="3">3 ภาพ</option>
+                <option value="4">4 ภาพ</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="row" style="padding:11px 13px">
+            <div class="row-main">
+              <h3 style="font-size:12.5px">คำสั่งที่จะส่งไป</h3>
+              <p id="g-preview" style="word-break:break-word"></p>
+            </div>
+            <button class="btn btn-sm" type="button" id="btn-gen">สร้างภาพ</button>
+          </div>
+          <p class="pv-note" id="g-result"></p>
+        </div>
+      </div>
     </section>
 
     <!-- ======== ACCOUNT ======== -->
@@ -1616,6 +1672,7 @@ table.vids tbody tr:hover { background: var(--surface-2); }
     fillGoogle();
     fillTalks();
     fillScenes();
+    fillGenPanel();
 
     $("#sub-make").innerHTML = FORMATS.map((f) =>
       `<button class="sub-item" data-format="${f.id}">${f.name}<small>${f.sec} วิ</small></button>`).join("");
@@ -1698,6 +1755,35 @@ table.vids tbody tr:hover { background: var(--surface-2); }
       `<option value="${x.id}">${x.name}</option>`).join("");
     $(sel).value = cfg[key];
     $(hint).textContent = (list.find((x) => x.id === cfg[key]) || {}).note || "";
+  }
+
+  /* ---------------- สร้างช็อตคนด้วย AI ---------------- */
+  // ต้องตรงกับ FRAMING ใน src/aigen.py — พรีวิวที่ไม่ตรงกับของจริงหลอกตาแย่กว่าไม่มี
+  const GEN_FRAMING = "vertical 9:16 portrait orientation, photorealistic, "
+    + "no text or watermarks or logos in the image, "
+    + "leave headroom at the top and empty space at the bottom";
+
+  function fillGenPanel() {
+    $("#g-scene").innerHTML = SCENES.map((x) =>
+      `<option value="${x.id}">${x.name}</option>`).join("");
+    $("#g-product").innerHTML = '<option value="">ไม่ต้องถือสินค้า</option>'
+      + PRODUCTS.map((p) => `<option value="${p.id}">${p.name}</option>`).join("");
+    showGenPrompt();
+  }
+
+  function showGenPrompt() {
+    const sceneId = $("#g-scene").value;
+    const picked = SCENES.find((x) => x.id === sceneId);
+    $("#g-scene-hint").textContent = picked ? picked.note : "";
+
+    const look = $("#g-look").value.trim() || "a friendly Thai person in their twenties";
+    const product = PRODUCTS.find((p) => p.id === $("#g-product").value);
+    const bits = [look];
+    if (product) bits.push(`holding ${product.name} toward the camera`);
+    // ฉากจริงมาจากเซิร์ฟเวอร์ หน้าเว็บไม่มี prompt ของฉาก จึงบอกเป็นชื่อฉากแทน
+    if (picked && picked.id !== "auto") bits.push(`[ฉาก ${picked.name}]`);
+    bits.push(GEN_FRAMING);
+    $("#g-preview").textContent = bits.join(", ");
   }
 
   function fillTalks() { fillPicker("#f-talk", TALKS, "talk", "#talk-hint"); }
@@ -2571,6 +2657,44 @@ table.vids tbody tr:hover { background: var(--surface-2); }
   $("#f-scene").addEventListener("change", (e) => {
     cfg.scene = e.target.value; fillScenes();
   });
+  ["#g-scene", "#g-look", "#g-product"].forEach((sel) =>
+    $(sel).addEventListener("input", showGenPrompt));
+
+  $("#btn-gen").addEventListener("click", async () => {
+    const btn = $("#btn-gen");
+    const out = $("#g-result");
+    const cast = $("#g-cast").value.trim();
+    if (!cast) { toast("ใส่ชื่อตัวละครก่อน", "warn"); return; }
+    if (!SERVER.live) { toast("ต้องต่อเซิร์ฟเวอร์ก่อนถึงจะสร้างภาพได้", "warn"); return; }
+
+    const label = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = "กำลังสร้าง…";
+    out.textContent = "กำลังเรียกโมเดลภาพ · อาจใช้เวลาหลายสิบวินาที";
+    try {
+      const res = await SERVER.call("/personas/generate", {
+        method: "POST",
+        body: JSON.stringify({
+          persona: cast,
+          scene: $("#g-scene").value,
+          look: $("#g-look").value.trim(),
+          product_id: $("#g-product").value || null,
+          count: Number($("#g-count").value),
+        }),
+      });
+      out.textContent = `ได้ ${res.saved.length} รูป · เซฟใน ${res.folder} · `
+        + `${res.saved.join(", ")} · รุ่น ${res.model}`;
+      toast(`สร้างช็อต ${cast} สำเร็จ ${res.saved.length} รูป`);
+      await pullState();
+    } catch (err) {
+      out.textContent = `สร้างไม่สำเร็จ · ${err.message}`;
+      toast("สร้างภาพไม่สำเร็จ · ดูรายละเอียดใต้ปุ่ม", "fail");
+    } finally {
+      btn.disabled = false;
+      btn.textContent = label;
+    }
+  });
+
   $("#s-gimage").addEventListener("change", showGoogle);
   $("#s-gvideo").addEventListener("change", showGoogle);
   $("#copy-genv").addEventListener("click", async () => {
@@ -2775,6 +2899,7 @@ table.vids tbody tr:hover { background: var(--surface-2); }
     if (Array.isArray(SERVER.health.scenes) && SERVER.health.scenes.length) {
       SCENES = SERVER.health.scenes;
       fillScenes();
+      fillGenPanel();
     }
     if (SERVER.health.google) {
       GOOGLE = SERVER.health.google;

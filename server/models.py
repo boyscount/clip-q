@@ -170,3 +170,34 @@ class QueueRequest(BaseModel):
 class CapRequest(BaseModel):
     model_config = {"extra": "forbid"}
     cap: int = Field(ge=0, le=99)
+
+
+class GenerateShotsRequest(BaseModel):
+    """ขอให้ AI สร้างช็อตคนให้ตัวละครหนึ่งตัว
+
+    มีค่าใช้จ่ายจริงต่อภาพ จำนวนจึงถูกจำกัดไว้ที่ชั้นนี้ด้วย ไม่ใช่แค่ในหน้าเว็บ
+    """
+
+    model_config = {"extra": "forbid"}
+
+    persona: str = Field(min_length=1, max_length=60)
+    scene: str = "auto"
+    look: str = Field(default="", max_length=400)
+    product_id: str | None = Field(default=None, max_length=64)
+    count: int = Field(default=1, ge=1, le=4)
+
+    @field_validator("scene")
+    @classmethod
+    def _known_scene_gen(cls, value: str) -> str:
+        if value not in VALID_SCENES:
+            raise ValueError(f"สไตล์วิดีโอต้องเป็นอย่างใดอย่างหนึ่งใน {sorted(VALID_SCENES)}")
+        return value
+
+    @field_validator("persona")
+    @classmethod
+    def _safe_persona(cls, value: str) -> str:
+        name = value.strip()
+        # ชื่อตัวละครกลายเป็นชื่อโฟลเดอร์ ห้ามพาออกนอก personas/
+        if not name or name in {".", ".."} or "/" in name or "\\" in name:
+            raise ValueError("ชื่อตัวละครใช้ไม่ได้")
+        return name
