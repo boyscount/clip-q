@@ -56,7 +56,7 @@ def photos_for(product_id: str, count: int) -> list[Path]:
     return sorted(folder.glob("[0-9][0-9].jpg"))[:count]
 
 
-def script_for(product: dict, job, style, facts, mode: str) -> list[str]:
+def script_for(product: dict, job, style, facts, mode: str, talk=None) -> list[str]:
     """สคริปต์ของงานนี้ — ให้ Claude เขียนถ้าขอไว้และมีคีย์
 
     ไม่มีคีย์แล้วล้มทั้งงานไม่คุ้ม เพราะเทมเพลตให้ผลที่ใช้ได้อยู่แล้ว
@@ -66,14 +66,14 @@ def script_for(product: dict, job, style, facts, mode: str) -> list[str]:
 
     if mode != "llm":
         return script_gen.plan_lines(product, job["format"], seed=None,
-                                     style=style, facts=facts)
+                                     style=style, facts=facts, talk=talk)
     if not os.environ.get("ANTHROPIC_API_KEY"):
         db.log(job["user_id"], "ขอให้ Claude เขียนสคริปต์ แต่ยังไม่ได้ตั้ง"
                " ANTHROPIC_API_KEY — ใช้เทมเพลตแทน", "warn", job["id"])
         return script_gen.plan_lines(product, job["format"], seed=None,
-                                     style=style, facts=facts)
+                                     style=style, facts=facts, talk=talk)
     try:
-        text = script_gen.build_llm_script(product, job["format"], style, facts)
+        text = script_gen.build_llm_script(product, job["format"], style, facts, talk)
         lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
         if not lines:
             raise RuntimeError("โมเดลตอบกลับมาว่าง")
@@ -84,13 +84,14 @@ def script_for(product: dict, job, style, facts, mode: str) -> list[str]:
         db.log(job["user_id"], f"Claude เขียนสคริปต์ไม่สำเร็จ · {exc} — ใช้เทมเพลตแทน",
                "warn", job["id"])
         return script_gen.plan_lines(product, job["format"], seed=None,
-                                     style=style, facts=facts)
+                                     style=style, facts=facts, talk=talk)
 
 
 def render(job) -> dict:
     """Run the pipeline for one job. Returns the fields to store."""
-    from src import (images, persona, render as renderer, script_gen, speech,
-                     style as styles, subtitle, voice)
+    from src import (images, persona, render as renderer, scene as scenes,
+                     script_gen, speech, style as styles, subtitle, talk as talks,
+                     voice)
 
     user_id = job["user_id"]
     product = db.product(user_id, job["product_id"])
@@ -105,7 +106,15 @@ def render(job) -> dict:
     shot_count = (job["shot_count"] if "shot_count" in keys else 0) or product.get("shots", 4)
     mode = (job["script_mode"] if "script_mode" in keys else "template") or "template"
 
-    lines = script_for(product, job, style, facts, mode)
+    # "random" สุ่มด้วยรหัสงานเป็น seed คลิปแต่ละใบในคิวจึงได้คนละน้ำเสียง
+    # แต่เรนเดอร์งานเดิมซ้ำยังได้สคริปต์แบบเดิม
+    talk_id = (job["talk"] if "talk" in keys else talks.AUTO) or talks.AUTO
+    talk = talks.pick(talk_id, seed=hash(job["id"]) & 0xFFFF)
+    if talk and talk_id != talks.AUTO:
+        db.log(job["user_id"], f"สไตล์การพูด {talk.name}", "info", job["id"])
+
+    scene_id = (job["scene"] if "scene" in keys else scenes.AUTO) or scenes.AUTO
+    lines = script_for(product, job, style, facts, mode, talk)
     db.set_progress(job["id"], 10)
 
     if FAKE:
@@ -140,7 +149,14 @@ def render(job) -> dict:
         shots = images.prepare(photos, work / "shots", shot_count) or photos
 
         # ช็อตคนจาก app/assets/personas/<ชื่อตัวละคร>/ — ไม่มีก็ใช้สินค้าล้วน
-        people = persona.shots(job["persona"])
+        people = persona.shots(job["persona"], scene_id)
+        if scene_id != scenes.AUTO:
+            picked = scenes.get(scene_id)
+            folder = persona.scene_folder(job["persona"], scene_id)
+            db.log(job["user_id"],
+                   f"ฉาก {picked.name} · ใช้ช็อตใน {folder.name}/" if folder else
+                   f"ฉาก {picked.name} · ยังไม่มีโฟลเดอร์ของฉากนี้ ใช้ช็อตชั้นนอกแทน",
+                   "info" if folder else "warn", job["id"])
         if people and style.belt:
             # สายพานคือภาพไหลต่อเนื่อง ไม่มีช็อต จึงไม่มีที่ให้แทรกคน
             db.log(job["user_id"],

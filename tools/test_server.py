@@ -131,6 +131,8 @@ def main() -> int:
             ("แนวคลิปไม่รู้จัก", queue_body(account_ids=[a1], style="ไม่มีแนวนี้")),
             ("ข้อมูลที่พูดถึงไม่รู้จัก", queue_body(account_ids=[a1], facts=["ราคาลับ"])),
             ("โหมดเขียนสคริปต์ไม่รู้จัก", queue_body(account_ids=[a1], script_mode="gpt")),
+            ("สไตล์การพูดไม่รู้จัก", queue_body(account_ids=[a1], talk="ดุดัน")),
+            ("สไตล์วิดีโอไม่รู้จัก", queue_body(account_ids=[a1], scene="อวกาศ")),
             ("ช็อตน้อยกว่าขั้นต่ำ", queue_body(account_ids=[a1], shots=2)),
             ("ช็อตเกินเพดาน", queue_body(account_ids=[a1], shots=99)),
             ("ฟิลด์แปลกปลอม", queue_body(account_ids=[a1], surprise="x")),
@@ -369,6 +371,22 @@ def main() -> int:
         check("เก็บจำนวนช็อต", row["shot_count"], 7)
         check("เก็บโหมดเขียนสคริปต์", row["script_mode"], "llm")
 
+        picked = c.post("/api/queue", json=queue_body(
+            account_ids=[a1], talk="latenight", scene="cafe"), headers=auth_a)
+        srow = db.connect().execute(
+            "SELECT talk, scene FROM jobs WHERE batch_id = ?",
+            (picked.json()["batch_id"],)).fetchone()
+        check("เก็บสไตล์การพูด", srow["talk"], "latenight")
+        check("เก็บสไตล์วิดีโอ", srow["scene"], "cafe")
+        pview = next(j for j in c.get("/api/state", headers=auth_a).json()["jobs"]
+                     if j["id"] == row_id(picked))
+        check("ส่งสไตล์การพูดกลับให้หน้าเว็บ", pview["talk"], "latenight")
+        check("ส่งสไตล์วิดีโอกลับ", pview["scene"], "cafe")
+        check("health บอกรายการสไตล์การพูด",
+              {"auto", "random"} <= {t["id"] for t in c.get("/api/health").json()["talks"]}, True)
+        check("health บอกรายการสไตล์วิดีโอ",
+              c.get("/api/health").json()["scenes"][0]["id"], "auto")
+
         view = next(j for j in c.get("/api/state", headers=auth_a).json()["jobs"]
                     if j["id"] == row_id(res))
         check("ส่งแนวกลับให้หน้าเว็บ", view["style"]["id"], "warehouse")
@@ -378,12 +396,15 @@ def main() -> int:
         # ไม่ส่งตัวเลือกมาเลย = พฤติกรรมเดิมทุกอย่าง ของเก่าต้องไม่พัง
         plain = c.post("/api/queue", json=queue_body(account_ids=[a1]), headers=auth_a)
         base = db.connect().execute(
-            "SELECT style, facts, shot_count, script_mode FROM jobs WHERE batch_id = ?",
+            "SELECT style, facts, shot_count, script_mode, talk, scene"
+            " FROM jobs WHERE batch_id = ?",
             (plain.json()["batch_id"],)).fetchone()
         check("ไม่ส่งแนว → เรียบ", base["style"], "clean")
         check("ไม่ส่ง facts → ว่าง แปลว่าครบทุกชิ้น", base["facts"], "")
         check("ไม่ส่งจำนวนช็อต → 0 แปลว่าใช้ค่าของสินค้า", base["shot_count"], 0)
         check("ไม่ส่งโหมด → เทมเพลต", base["script_mode"], "template")
+        check("ไม่ส่งสไตล์การพูด → auto", base["talk"], "auto")
+        check("ไม่ส่งสไตล์วิดีโอ → auto", base["scene"], "auto")
         check("งานที่ไม่ได้ตั้งช็อต ยังรายงานค่าของสินค้า",
               next(j for j in c.get("/api/state", headers=auth_a).json()["jobs"]
                    if j["id"] == row_id(plain))["shots"] > 0, True)

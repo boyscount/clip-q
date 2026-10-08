@@ -13,7 +13,9 @@ from datetime import date, timedelta
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from src.scene import VALID as VALID_SCENES
 from src.script_gen import ALL_FACTS
+from src.talk import VALID as VALID_TALKS
 from src.style import DEFAULT as DEFAULT_STYLE, STYLES
 
 FORMATS = {"quick": 16, "show": 24, "story": 42}
@@ -47,6 +49,9 @@ class QueueRequest(BaseModel):
     # จำนวนช็อต None = ใช้ค่าที่ตั้งไว้ที่ตัวสินค้า
     shots: int | None = Field(default=None, ge=MIN_SHOTS, le=MAX_SHOTS)
     script_mode: str = "template"
+    # สไตล์การพูดและฉาก auto = ตามแนวคลิป / ไม่เจาะจงฉาก
+    talk: str = "auto"
+    scene: str = "auto"
     voice: str = "female"
     per: int = Field(default=1, ge=1, le=MAX_PER)
     cart: bool = True
@@ -114,6 +119,20 @@ class QueueRequest(BaseModel):
     def _known_script_mode(cls, value: str) -> str:
         if value not in SCRIPT_MODES:
             raise ValueError(f"โหมดเขียนสคริปต์ต้องเป็น {sorted(SCRIPT_MODES)}")
+        return value
+
+    @field_validator("talk")
+    @classmethod
+    def _known_talk(cls, value: str) -> str:
+        if value not in VALID_TALKS:
+            raise ValueError(f"สไตล์การพูดต้องเป็นอย่างใดอย่างหนึ่งใน {sorted(VALID_TALKS)}")
+        return value
+
+    @field_validator("scene")
+    @classmethod
+    def _known_scene(cls, value: str) -> str:
+        if value not in VALID_SCENES:
+            raise ValueError(f"สไตล์วิดีโอต้องเป็นอย่างใดอย่างหนึ่งใน {sorted(VALID_SCENES)}")
         return value
 
     @field_validator("voice")

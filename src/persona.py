@@ -59,9 +59,34 @@ def folder_for(name: str) -> Path | None:
     return None
 
 
-def shots(name: str) -> list[Path]:
-    """ไฟล์สื่อของตัวละคร เรียงตามชื่อไฟล์"""
-    folder = folder_for(name)
+def scene_folder(name: str, scene_id: str | None) -> Path | None:
+    """โฟลเดอร์ย่อยของฉาก ถ้ามีไฟล์สื่ออยู่จริง
+
+    โฟลเดอร์ฉากที่สร้างไว้แต่ยังว่าง ไม่นับว่ามี — ไม่งั้นเลือกฉากแล้วคลิป
+    จะกลายเป็นสินค้าล้วนโดยไม่รู้ว่าเพราะอะไร
+    """
+    from . import scene as scenes
+
+    base = folder_for(name)
+    wanted = scenes.folder_name(scene_id)
+    if base is None or not wanted:
+        return None
+
+    target = scenes.slug(wanted)
+    for child in base.iterdir():
+        if child.is_dir() and scenes.slug(child.name) == target:
+            has_media = any(f.is_file() and f.suffix.lower() in MEDIA_SUFFIXES
+                            for f in child.iterdir())
+            return child if has_media else None
+    return None
+
+
+def shots(name: str, scene_id: str | None = None) -> list[Path]:
+    """ไฟล์สื่อของตัวละคร เรียงตามชื่อไฟล์
+
+    เจาะจงฉากแล้วมีโฟลเดอร์ฉากอยู่จริง ก็หยิบจากในนั้น ไม่มีก็ใช้ไฟล์ชั้นนอก
+    """
+    folder = scene_folder(name, scene_id) or folder_for(name)
     if folder is None:
         return []
     files = sorted(

@@ -667,6 +667,19 @@ table.vids tbody tr:hover { background: var(--surface-2); }
               <div class="ctl-hint" id="style-hint"></div>
             </div>
 
+            <div class="ctl-2">
+              <div class="ctl">
+                <label for="f-scene">สไตล์วิดีโอ</label>
+                <select class="input" id="f-scene"></select>
+                <div class="ctl-hint" id="scene-hint"></div>
+              </div>
+              <div class="ctl">
+                <label for="f-talk">สไตล์การพูด</label>
+                <select class="input" id="f-talk"></select>
+                <div class="ctl-hint" id="talk-hint"></div>
+              </div>
+            </div>
+
             <div class="ctl">
               <div class="ctl-k">ข้อมูลที่ให้พูดถึง</div>
               <div class="filters" id="fact-opts" style="margin:0"></div>
@@ -1176,6 +1189,24 @@ table.vids tbody tr:hover { background: var(--surface-2); }
   ];
   let SHOT_RANGE = [3, 18];
 
+  /* สไตล์การพูดกับสไตล์วิดีโอ — ต้องตรงกับ src/talk.py และ src/scene.py
+     เซิร์ฟเวอร์ส่งรายการจริงมาทาง /api/health */
+  let TALKS = [
+    { id: "auto",      name: "ตามแนวคลิป",   note: "ใช้น้ำเสียงที่ติดมากับแนวที่เลือกไว้" },
+    { id: "random",    name: "สุ่มทุกคลิป",   note: "คลิปแต่ละใบในคิวได้คนละน้ำเสียง · กันคลิปออกมาเหมือนกันหมด" },
+    { id: "friendly",  name: "เป็นกันเอง",    note: "เหมือนเพื่อนเล่าให้เพื่อนฟัง · ใช้ได้กับเกือบทุกสินค้า" },
+    { id: "hardsell",  name: "ขายของจัดเต็ม", note: "เร่งเร้า เน้นราคาและความเร่งด่วน" },
+    { id: "honest",    name: "รีวิวตรงไปตรงมา", note: "น่าเชื่อถือ เหมาะกับของราคาสูง" },
+    { id: "story",     name: "เล่าเรื่อง",    note: "เปิดด้วยปัญหา จบด้วยทางแก้" },
+    { id: "punchy",    name: "สั้นกระชับ",    note: "ประโยคสั้น จังหวะเร็ว" },
+    { id: "polite",    name: "สุภาพทางการ",   note: "เรียบร้อย น่าเชื่อถือ" },
+    { id: "hyped",     name: "ตื่นเต้นเร้าใจ", note: "เหมาะกับของเล่น แกดเจ็ต" },
+    { id: "latenight", name: "คุยดึกชิล ๆ",   note: "เสียงเบา ช้า ไม่เร่งเร้า" },
+  ];
+  let SCENES = [
+    { id: "auto", name: "ไม่เจาะจงฉาก", note: "ใช้ไฟล์ทั้งหมดในโฟลเดอร์ตัวละคร ไม่แยกฉาก" },
+  ];
+
   /* โมเดล AI ของ Google — ต้องตรงกับ src/aigen.py เซิร์ฟเวอร์ส่งรายการจริงมา
      ทาง /api/health พร้อมรุ่นที่ .env ตั้งไว้ */
   let GOOGLE = {
@@ -1353,6 +1384,7 @@ table.vids tbody tr:hover { background: var(--surface-2); }
     format: FORMATS[0], aspect: ASPECTS[0], per: 1,
     cast: CAST[0].name, style: STYLES[0].id, voice: "หญิง",
     facts: FACTS.map((f) => f.id), shots: 0, scriptMode: "template",
+    talk: "auto", scene: "auto",
     subtitle: true, bgm: false, tags: true, cart: true,
     accounts: [ACCOUNTS[0].handle],
     startDate: iso(new Date()),
@@ -1451,7 +1483,13 @@ table.vids tbody tr:hover { background: var(--surface-2); }
     // ต้องตรงกับ _beats ใน src/script_gen.py ไม่งั้นพรีวิวจะหลอกตา
     const use = (job.facts && job.facts.length ? job.facts : cfg.facts) || [];
     const on = (fact) => use.includes(fact);
-    const hook = HOOKS[job.seed % HOOKS.length].replace("{name}", p.name).replace("{price}", baht(p.price));
+    // สไตล์การพูดที่เลือกไว้ชนะชุดประโยคกลาง เพื่อให้พรีวิวตรงกับที่จะเรนเดอร์
+    // "สุ่มทุกคลิป" โชว์ชุดกลางไว้ก่อน เพราะตัวจริงสุ่มตอนเรนเดอร์ด้วยรหัสงาน
+    const picked = TALKS.find((t) => t.id === (job.talk || cfg.talk));
+    const hooks = (picked && picked.hooks && picked.hooks.length) ? picked.hooks : HOOKS;
+    const closings = (picked && picked.closings && picked.closings.length)
+      ? picked.closings : CLOSINGS;
+    const hook = hooks[job.seed % hooks.length].replace("{name}", p.name).replace("{price}", baht(p.price));
     const cta = (p.free && on("free")) ? CTA + " ส่งฟรีมีเก็บปลายทาง" : CTA;
 
     const optional = [];
@@ -1461,7 +1499,7 @@ table.vids tbody tr:hover { background: var(--surface-2); }
     if (bullets[1]) optional.push([3, bullets[1]]);
     if (p.sold && on("sold")) optional.push([5, `ขายไปแล้ว ${baht(p.sold)} ชิ้น คนซื้อซ้ำเยอะ`]);
     if (p.shop && on("shop")) optional.push([6, `ส่งจากร้าน ${p.shop} ของแท้แน่นอน`]);
-    optional.push([90, CLOSINGS[job.seed % CLOSINGS.length]]);
+    optional.push([90, closings[job.seed % closings.length]]);
     if (bullets[2]) optional.push([4, bullets[2]]);
     if (job.format.id === "story") optional.push([0, STORY_OPENERS[job.seed % STORY_OPENERS.length]]);
     EXTRAS.forEach((text, i) => optional.push([50 + i, text]));
@@ -1576,6 +1614,8 @@ table.vids tbody tr:hover { background: var(--surface-2); }
     $("#f-script").value = cfg.scriptMode;
     showScriptHint();
     fillGoogle();
+    fillTalks();
+    fillScenes();
 
     $("#sub-make").innerHTML = FORMATS.map((f) =>
       `<button class="sub-item" data-format="${f.id}">${f.name}<small>${f.sec} วิ</small></button>`).join("");
@@ -1651,6 +1691,17 @@ table.vids tbody tr:hover { background: var(--surface-2); }
       ? "ยังไม่ได้ตั้ง ANTHROPIC_API_KEY — จะถอยไปใช้เทมเพลตให้เอง"
       : "เสียค่า API ต่อคลิป · ถ้าเรียกไม่สำเร็จจะถอยไปใช้เทมเพลต";
   }
+
+  function fillPicker(sel, list, key, hint) {
+    if (!list.some((x) => x.id === cfg[key])) cfg[key] = list[0].id;
+    $(sel).innerHTML = list.map((x) =>
+      `<option value="${x.id}">${x.name}</option>`).join("");
+    $(sel).value = cfg[key];
+    $(hint).textContent = (list.find((x) => x.id === cfg[key]) || {}).note || "";
+  }
+
+  function fillTalks() { fillPicker("#f-talk", TALKS, "talk", "#talk-hint"); }
+  function fillScenes() { fillPicker("#f-scene", SCENES, "scene", "#scene-hint"); }
 
   /* เรียกซ้ำได้ เพราะรายการจริงมาจากเซิร์ฟเวอร์หลังหน้าเว็บโหลดไปแล้ว */
   function fillGoogle() {
@@ -1791,6 +1842,8 @@ table.vids tbody tr:hover { background: var(--surface-2); }
           facts: cfg.facts,
           shots: cfg.shots || null,
           script_mode: cfg.scriptMode,
+          talk: cfg.talk,
+          scene: cfg.scene,
           voice: cfg.voice === "ชาย" ? "male" : "female",
           per: cfg.per,
           cart: cfg.cart,
@@ -2512,6 +2565,12 @@ table.vids tbody tr:hover { background: var(--surface-2); }
   $("#f-style").addEventListener("change", (e) => { cfg.style = e.target.value; showStyleHint(); syncConfig(); });
   $("#f-shots").addEventListener("change", (e) => { cfg.shots = Number(e.target.value); showShotsHint(); syncConfig(); });
   $("#f-script").addEventListener("change", (e) => { cfg.scriptMode = e.target.value; showScriptHint(); });
+  $("#f-talk").addEventListener("change", (e) => {
+    cfg.talk = e.target.value; fillTalks(); syncConfig();
+  });
+  $("#f-scene").addEventListener("change", (e) => {
+    cfg.scene = e.target.value; fillScenes();
+  });
   $("#s-gimage").addEventListener("change", showGoogle);
   $("#s-gvideo").addEventListener("change", showGoogle);
   $("#copy-genv").addEventListener("click", async () => {
@@ -2709,6 +2768,14 @@ table.vids tbody tr:hover { background: var(--surface-2); }
       fillShots();
     }
     showScriptHint();
+    if (Array.isArray(SERVER.health.talks) && SERVER.health.talks.length) {
+      TALKS = SERVER.health.talks;
+      fillTalks();
+    }
+    if (Array.isArray(SERVER.health.scenes) && SERVER.health.scenes.length) {
+      SCENES = SERVER.health.scenes;
+      fillScenes();
+    }
     if (SERVER.health.google) {
       GOOGLE = SERVER.health.google;
       fillGoogle();

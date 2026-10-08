@@ -130,13 +130,15 @@ async def _service_error(_: Request, exc: service.ServiceError):
 def health() -> dict:
     import shutil
 
-    from src import aigen, script_gen, style as styles
+    from src import aigen, scene as scenes, script_gen, style as styles, talk as talks
 
     from . import notify, outbox
     return {
         "ok": True,
         "styles": styles.choices(),
         "facts": [{"id": k, "name": v} for k, v in script_gen.FACTS.items()],
+        "talks": talks.choices(),
+        "scenes": scenes.choices(),
         "shotRange": [MIN_SHOTS, MAX_SHOTS],
         "hasClaudeKey": bool(os.environ.get("ANTHROPIC_API_KEY")),
         "google": aigen.choices(),
