@@ -124,6 +124,10 @@ def plan_schedule(req: QueueRequest, accounts: list[dict], products: list[dict])
                     "aspect": req.aspect,
                     "persona": req.persona,
                     "style": req.style,
+                    # ว่าง = ครบทุกชิ้น เก็บเป็นข้อความคั่นจุลภาคให้อ่านออกใน DB
+                    "facts": ",".join(req.facts) if req.facts is not None else "",
+                    "shot_count": req.shots or 0,
+                    "script_mode": req.script_mode,
                     "voice": req.voice,
                     "cart": 1 if req.cart else 0,
                     "scheduled_at": when.isoformat(timespec="seconds"),
@@ -181,11 +185,16 @@ def create_queue(user_id: str, req: QueueRequest) -> dict:
     }
 
 
+def _col(row, name: str, fallback):
+    """ค่าในคอลัมน์ที่อาจยังไม่มีในฐานข้อมูลเก่า"""
+    return row[name] if name in row.keys() else fallback
+
+
 def style_view(row) -> dict:
     """แนวของงานหนึ่ง — งานเก่าที่สร้างก่อนมีคอลัมน์นี้จะได้แนวเรียบ"""
     from src import style as styles
 
-    chosen = styles.get(row["style"] if "style" in row.keys() else None)
+    chosen = styles.get(_col(row, "style", None))
     return {"id": chosen.id, "name": chosen.name}
 
 
@@ -214,6 +223,9 @@ def job_view(user_id: str, row, stats: dict | None = None) -> dict:
         "aspect": {"id": row["aspect"], "w": w, "h": h},
         "persona": row["persona"],
         "style": style_view(row),
+        "shots": _col(row, "shot_count", 0) or product.get("shots", 4),
+        "facts": [f for f in (_col(row, "facts", "") or "").split(",") if f],
+        "scriptMode": _col(row, "script_mode", "template"),
         "voice": row["voice"],
         "cart": bool(row["cart"]),
         "link": row["link"],

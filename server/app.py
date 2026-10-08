@@ -26,7 +26,8 @@ from .config import load_env
 load_env()
 
 from . import db, service, worker  # noqa: E402
-from .models import ASPECTS, FORMATS, CapRequest, QueueRequest
+from .models import (ASPECTS, FORMATS, MAX_SHOTS, MIN_SHOTS, CapRequest,  # noqa: E402
+                     QueueRequest)
 
 ROOT = Path(__file__).resolve().parent.parent
 APP_DIR = ROOT / "app"
@@ -129,12 +130,15 @@ async def _service_error(_: Request, exc: service.ServiceError):
 def health() -> dict:
     import shutil
 
-    from src import style as styles
+    from src import script_gen, style as styles
 
     from . import notify, outbox
     return {
         "ok": True,
         "styles": styles.choices(),
+        "facts": [{"id": k, "name": v} for k, v in script_gen.FACTS.items()],
+        "shotRange": [MIN_SHOTS, MAX_SHOTS],
+        "hasClaudeKey": bool(os.environ.get("ANTHROPIC_API_KEY")),
         "ffmpeg": bool(shutil.which("ffmpeg")),
         "worker": START_WORKER,
         "fake_render": worker.FAKE,

@@ -56,6 +56,37 @@ def photos_for(product_id: str, count: int) -> list[Path]:
     return sorted(folder.glob("[0-9][0-9].jpg"))[:count]
 
 
+def script_for(product: dict, job, style, facts, mode: str) -> list[str]:
+    """สคริปต์ของงานนี้ — ให้ Claude เขียนถ้าขอไว้และมีคีย์
+
+    ไม่มีคีย์แล้วล้มทั้งงานไม่คุ้ม เพราะเทมเพลตให้ผลที่ใช้ได้อยู่แล้ว
+    บันทึกไว้ใน log ว่าถอยมาใช้อะไร จะได้ไม่งงว่าทำไมสำนวนไม่เหมือนที่สั่ง
+    """
+    from src import script_gen
+
+    if mode != "llm":
+        return script_gen.plan_lines(product, job["format"], seed=None,
+                                     style=style, facts=facts)
+    if not os.environ.get("ANTHROPIC_API_KEY"):
+        db.log(job["user_id"], "ขอให้ Claude เขียนสคริปต์ แต่ยังไม่ได้ตั้ง"
+               " ANTHROPIC_API_KEY — ใช้เทมเพลตแทน", "warn", job["id"])
+        return script_gen.plan_lines(product, job["format"], seed=None,
+                                     style=style, facts=facts)
+    try:
+        text = script_gen.build_llm_script(product, job["format"], style, facts)
+        lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+        if not lines:
+            raise RuntimeError("โมเดลตอบกลับมาว่าง")
+        db.log(job["user_id"], f"Claude เขียนสคริปต์ให้ {len(lines)} บรรทัด",
+               "ok", job["id"])
+        return lines
+    except Exception as exc:  # noqa: BLE001 — เน็ตล่มไม่ควรทำให้คลิปไม่ได้เรนเดอร์
+        db.log(job["user_id"], f"Claude เขียนสคริปต์ไม่สำเร็จ · {exc} — ใช้เทมเพลตแทน",
+               "warn", job["id"])
+        return script_gen.plan_lines(product, job["format"], seed=None,
+                                     style=style, facts=facts)
+
+
 def render(job) -> dict:
     """Run the pipeline for one job. Returns the fields to store."""
     from src import (images, persona, render as renderer, script_gen, speech,
@@ -66,8 +97,15 @@ def render(job) -> dict:
     if product is None:
         raise RuntimeError("สินค้าถูกลบไปแล้วระหว่างรอคิว")
 
-    style = styles.get(job["style"] if "style" in job.keys() else None)
-    lines = script_gen.plan_lines(product, job["format"], seed=None, style=style)
+    keys = job.keys()
+    style = styles.get(job["style"] if "style" in keys else None)
+    # ว่าง = ครบทุกชิ้น ซึ่งเป็นพฤติกรรมเดิมของงานที่สร้างก่อนมีตัวเลือกนี้
+    raw_facts = (job["facts"] if "facts" in keys else "") or ""
+    facts = [f for f in raw_facts.split(",") if f] or None
+    shot_count = (job["shot_count"] if "shot_count" in keys else 0) or product.get("shots", 4)
+    mode = (job["script_mode"] if "script_mode" in keys else "template") or "template"
+
+    lines = script_for(product, job, style, facts, mode)
     db.set_progress(job["id"], 10)
 
     if FAKE:
@@ -89,12 +127,17 @@ def render(job) -> dict:
         audio, cues, total = voice.synthesize("\n".join(lines), work, job["voice"])
         db.set_progress(job["id"], 45)
 
-        shots = photos_for(product["id"], product.get("shots", 4))
-        if not shots:
+        photos = photos_for(product["id"], shot_count)
+        if not photos:
             raise RuntimeError(
                 "ไม่มีรูปสินค้า — รัน tools/fetch_products.py เพื่อดึงรูปก่อน"
             )
-        shots = images.prepare(shots, work / "shots", product.get("shots", 4)) or shots
+        # prepare คืนช็อตครบตามจำนวนที่ขอเสมอ รูปน้อยกว่าก็วนซ้ำให้
+        if shot_count > len(photos):
+            db.log(job["user_id"],
+                   f"ขอ {shot_count} ช็อต แต่มีรูปสินค้า {len(photos)} รูป — วนรูปซ้ำ",
+                   "warn", job["id"])
+        shots = images.prepare(photos, work / "shots", shot_count) or photos
 
         # ช็อตคนจาก app/assets/personas/<ชื่อตัวละคร>/ — ไม่มีก็ใช้สินค้าล้วน
         people = persona.shots(job["persona"])

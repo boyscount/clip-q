@@ -101,13 +101,18 @@ def interleave(product_shots: list[Path], persona_shots: list[Path],
     # ช่องให้สินค้าอย่างน้อยหนึ่งช็อต — คลิปที่ไม่เห็นสินค้าเลยขายไม่ได้
     want_person = min(len(persona_shots), total - 1, max(1, round(total * want)))
 
-    slots = {0}                                   # ช็อตแรกเป็นคนเสมอ
-    if want_person > 1:
-        slots.add(total - 1)                      # ช็อตปิดท้ายตอนพูด CTA
-    for i in range(1, want_person - len(slots) + 1):
-        # ที่เหลือกระจายตรงกลาง ไม่ชิดหัวท้าย
-        step = total / (want_person - len(slots) + 2)
-        slots.add(min(total - 2, max(1, round(i * step))))
+    # กระจายให้ห่างเท่า ๆ กันตั้งแต่ช็อตแรกถึงช็อตสุดท้าย — ช็อตแรกเป็นคนเสมอ
+    # และช็อตปิดท้ายตอนพูด CTA ก็เป็นคนเมื่อมีมากกว่าหนึ่ง
+    #
+    # เดิมไล่หาตำแหน่งทีละช่องแล้วหนีบไม่ให้เกิน total-2 ซึ่งทำให้ช่องท้าย ๆ
+    # ตกมาทับกันเอง ได้คนน้อยกว่าที่ขอโดยไม่มีอะไรบอก สูตรนี้เว้นระยะคงที่
+    # (total-1)/(want_person-1) ซึ่งมากกว่า 1 เสมอเพราะ want_person < total
+    # ตำแหน่งจึงไม่มีทางซ้ำกัน
+    if want_person == 1:
+        slots = {0}
+    else:
+        step = (total - 1) / (want_person - 1)
+        slots = {round(i * step) for i in range(want_person)}
 
     plan: list[Path] = []
     person = product = 0

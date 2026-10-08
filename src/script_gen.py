@@ -43,6 +43,20 @@ CLOSINGS = [
 CTA = "กดตะกร้าส้มใต้คลิปเลย"
 CTA_FREE = "กดตะกร้าส้มใต้คลิปเลย ส่งฟรีมีเก็บปลายทาง"
 
+SOLD = "ขายไปแล้ว {sold:,} ชิ้น คนซื้อซ้ำเยอะ"
+SHOP = "ส่งจากร้าน {shop} ของแท้แน่นอน"
+
+# ข้อมูลสินค้าที่เลือกได้ว่าจะให้พูดถึงหรือไม่ — ชื่อ ราคา และ CTA พูดเสมอ
+# เพราะคลิปที่ไม่บอกว่าขายอะไรราคาเท่าไรก็ไม่ใช่คลิปขายของ
+FACTS = {
+    "discount": "ราคาเดิมและส่วนลด",
+    "bullets": "จุดขายของสินค้า",
+    "sold": "ยอดขายที่ผ่านมา",
+    "free": "ส่งฟรี เก็บปลายทาง",
+    "shop": "ชื่อร้านที่ส่ง",
+}
+ALL_FACTS = frozenset(FACTS)
+
 # Seller-voice filler, used only when the target length needs more to say.
 EXTRAS = [
     "ตอนแรกลังเลเพราะราคาถูกกว่าเจ้าอื่นเยอะ แต่ลองแล้วไม่ผิดหวัง",
@@ -62,26 +76,34 @@ EXTRAS = [
 TARGETS = {"quick": 16, "show": 24, "story": 42}
 
 
-def _beats(product: dict, fmt: str, rnd: random.Random,
-           style=None) -> tuple[list[str], list[tuple[int, str]]]:
-    """Return (fixed beats, optional beats as (insert_position, text))."""
+def _beats(product: dict, fmt: str, rnd: random.Random, style=None,
+           facts=None) -> tuple[list[str], list[tuple[int, str]]]:
+    """Return (fixed beats, optional beats as (insert_position, text)).
+
+    facts บอกว่าข้อมูลชิ้นไหนพูดถึงได้บ้าง None = พูดได้หมดเหมือนเดิม
+    """
+    use = ALL_FACTS if facts is None else (set(facts) & ALL_FACTS)
     price = f"{product['price']:,}"
     # แนวที่มี hook ของตัวเองใช้ของตัวเอง แนวที่ไม่มีใช้กองกลาง
     hooks = list(getattr(style, "hooks", ()) or ()) or HOOKS
     closings = list(getattr(style, "closings", ()) or ()) or CLOSINGS
     hook = rnd.choice(hooks).format(name=product["name"], price=price)
-    cta = CTA_FREE if product.get("free") else CTA
+    cta = CTA_FREE if (product.get("free") and "free" in use) else CTA
     fixed = [hook, cta]
 
     # position is the index in the final script, counting from the hook
     optional: list[tuple[int, str]] = []
-    bullets = product.get("bullets", [])
+    bullets = product.get("bullets", []) if "bullets" in use else []
     if bullets:
         optional.append((2, bullets[0]))
-    if product.get("was"):
+    if product.get("was") and "discount" in use:
         optional.append((1, DISCOUNT.format(was=f"{product['was']:,}")))
     if len(bullets) > 1:
         optional.append((3, bullets[1]))
+    if product.get("sold") and "sold" in use:
+        optional.append((5, SOLD.format(sold=product["sold"])))
+    if product.get("shop") and "shop" in use:
+        optional.append((6, SHOP.format(shop=product["shop"])))
     optional.append((90, rnd.choice(closings)))
     if len(bullets) > 2:
         optional.append((4, bullets[2]))
@@ -93,12 +115,12 @@ def _beats(product: dict, fmt: str, rnd: random.Random,
 
 
 def plan_lines(product: dict, fmt: str = "quick", target: float | None = None,
-               seed: int | None = None, style=None) -> list[str]:
+               seed: int | None = None, style=None, facts=None) -> list[str]:
     """Pick the set of beats whose estimated duration lands closest to target."""
     target = TARGETS.get(fmt, 24) if target is None else target
     m = speech.model()
     rnd = random.Random(seed)
-    (hook, cta), optional = _beats(product, fmt, rnd, style)
+    (hook, cta), optional = _beats(product, fmt, rnd, style, facts)
 
     chosen: list[tuple[int, str]] = []
 
@@ -124,21 +146,40 @@ def plan_lines(product: dict, fmt: str = "quick", target: float | None = None,
     return assemble()
 
 
-def build_llm_script(product: dict, fmt: str = "quick", style=None) -> str:
+def _llm_facts(product: dict, use: set) -> str:
+    """ข้อมูลที่อนุญาตให้ Claude พูดถึง — ชิ้นที่ไม่ได้เลือกจะไม่ถูกส่งไปเลย
+
+    ตัดออกตั้งแต่ตอนสร้าง prompt ไม่ใช่สั่งว่า "ห้ามพูดถึง" เพราะข้อมูลที่
+    ไม่ได้ส่งไป โมเดลแต่งขึ้นเองไม่ได้
+    """
+    out = [f"ราคา: {product['price']} บาท"]
+    if product.get("was") and "discount" in use:
+        out.append(f"ราคาปกติ: {product['was']} บาท")
+    if product.get("bullets") and "bullets" in use:
+        out.append("จุดขาย:\n" + "\n".join("- " + b for b in product["bullets"]))
+    if product.get("sold") and "sold" in use:
+        out.append(f"ขายไปแล้ว: {product['sold']:,} ชิ้น")
+    if product.get("shop") and "shop" in use:
+        out.append(f"ร้าน: {product['shop']}")
+    if product.get("free") and "free" in use:
+        out.append("ส่งฟรี มีเก็บปลายทาง")
+    return "\n".join(out)
+
+
+def build_llm_script(product: dict, fmt: str = "quick", style=None, facts=None) -> str:
     from anthropic import Anthropic
 
     target = TARGETS.get(fmt, 24)
     m = speech.model()
     budget = int((target - m["per_line"] * 7) / m["per_char"])
     tone = getattr(style, "tone", "") or "ภาษาพูดแบบคนรีวิวจริง"
+    use = ALL_FACTS if facts is None else (set(facts) & ALL_FACTS)
 
     prompt = textwrap.dedent(f"""
         เขียนสคริปต์พูดสำหรับคลิปรีวิวสินค้าแนวตั้ง
 
         สินค้า: {product['name']}
-        ราคา: {product['price']} บาท (ปกติ {product.get('was', '-')} บาท)
-        จุดขาย:
-        {chr(10).join('- ' + b for b in product.get('bullets', []))}
+        {_llm_facts(product, use)}
 
         น้ำเสียงที่ต้องการ: {tone}
 
@@ -148,7 +189,8 @@ def build_llm_script(product: dict, fmt: str = "quick", style=None) -> str:
         - ไม่ใช่โฆษณาแข็ง ๆ
         - ประโยคสั้น หนึ่งบรรทัดหนึ่งประโยค
         - บรรทัดแรกต้องเป็น hook ที่หยุดนิ้วคนดูได้ใน 2 วินาที
-        - ปิดท้ายด้วย: {CTA_FREE if product.get('free') else CTA}
+        - ปิดท้ายด้วย: {CTA_FREE if (product.get('free') and 'free' in use) else CTA}
+        - พูดได้เฉพาะข้อมูลที่ให้ไว้ข้างบน ห้ามเติมตัวเลขหรือคุณสมบัติที่ไม่ได้ให้
         - ห้ามเคลมสรรพคุณเกินจริงหรือเรื่องสุขภาพ
         - ตอบกลับมาเฉพาะตัวสคริปต์ ไม่ต้องมีหัวข้อหรือคำอธิบาย
     """).strip()
@@ -162,12 +204,12 @@ def build_llm_script(product: dict, fmt: str = "quick", style=None) -> str:
 
 
 def build_script(product: dict, mode: str = "template", seed: int | None = None,
-                 fmt: str = "quick", style=None) -> str:
+                 fmt: str = "quick", style=None, facts=None) -> str:
     if mode == "llm":
         if not os.environ.get("ANTHROPIC_API_KEY"):
             raise SystemExit("mode=llm ต้องตั้ง ANTHROPIC_API_KEY ก่อน")
-        return build_llm_script(product, fmt, style)
-    return "\n".join(plan_lines(product, fmt, seed=seed, style=style))
+        return build_llm_script(product, fmt, style, facts)
+    return "\n".join(plan_lines(product, fmt, seed=seed, style=style, facts=facts))
 
 
 if __name__ == "__main__":

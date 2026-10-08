@@ -312,6 +312,12 @@ input.input::placeholder { color: var(--fg-mute); }
 .pv-video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #0A0B0D; }
 .pv-shot { position: absolute; inset: 0; opacity: 0; transition: opacity .45s ease; }
 .pv-shot.on { opacity: 1; }
+/* รูปสินค้าจริงในพรีวิว — contain เพื่อให้เห็นทั้งรูปแบบเดียวกับที่ render.py
+   วางสินค้าไว้กลางเฟรมบนพื้นหลังเบลอ ไม่ใช่ครอปทิ้งแบบรูปย่อ */
+.pv-shot img {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  object-fit: contain; background: #0A0B0D;
+}
 .pv-shot i {
   position: absolute; inset: 0; display: grid; place-items: center;
   font-family: var(--display); font-weight: 700; font-style: normal;
@@ -659,6 +665,28 @@ table.vids tbody tr:hover { background: var(--surface-2); }
               <label for="f-style">แนวคลิป</label>
               <select class="input" id="f-style"></select>
               <div class="ctl-hint" id="style-hint"></div>
+            </div>
+
+            <div class="ctl">
+              <div class="ctl-k">ข้อมูลที่ให้พูดถึง</div>
+              <div class="filters" id="fact-opts" style="margin:0"></div>
+              <div class="ctl-hint">ชื่อสินค้า ราคา และคำชวนกดตะกร้า พูดเสมอ · สินค้าที่ไม่มีข้อมูลชิ้นนั้นก็ข้ามไป</div>
+            </div>
+
+            <div class="ctl-2">
+              <div class="ctl">
+                <label for="f-shots">จำนวนช็อต</label>
+                <select class="input" id="f-shots"></select>
+                <div class="ctl-hint" id="shots-hint"></div>
+              </div>
+              <div class="ctl">
+                <label for="f-script">คนเขียนสคริปต์</label>
+                <select class="input" id="f-script">
+                  <option value="template">เทมเพลต · เร็ว ฟรี ผลเดาได้</option>
+                  <option value="llm">Claude เขียนให้ · สำนวนสดกว่า</option>
+                </select>
+                <div class="ctl-hint" id="script-hint"></div>
+              </div>
             </div>
 
             <div class="ctl-2">
@@ -1090,6 +1118,17 @@ table.vids tbody tr:hover { background: var(--surface-2); }
     { id: "conveyor",   name: "สายพาน",           note: "ภาพสินค้าไหลต่อเนื่องแนวนอน ไม่มีรอยตัด · ใช้ภาพสินค้าล้วน" },
   ];
 
+  /* ข้อมูลสินค้าที่เลือกได้ว่าจะให้สคริปต์พูดถึง — ต้องตรงกับ FACTS ใน
+     src/script_gen.py เซิร์ฟเวอร์ส่งรายการจริงมาทาง /api/health */
+  let FACTS = [
+    { id: "discount", name: "ราคาเดิมและส่วนลด" },
+    { id: "bullets",  name: "จุดขายของสินค้า" },
+    { id: "sold",     name: "ยอดขายที่ผ่านมา" },
+    { id: "free",     name: "ส่งฟรี เก็บปลายทาง" },
+    { id: "shop",     name: "ชื่อร้านที่ส่ง" },
+  ];
+  let SHOT_RANGE = [3, 18];
+
   const ACCOUNTS = [
     { id: "A1", handle: "@deedeeshop",   sub: "sub_main",  cap: 5, used: 2, hue: 20 },
     { id: "A2", handle: "@deedee.clips", sub: "sub_clip",  cap: 4, used: 1, hue: 200 },
@@ -1247,6 +1286,7 @@ table.vids tbody tr:hover { background: var(--surface-2); }
   const cfg = {
     format: FORMATS[0], aspect: ASPECTS[0], per: 1,
     cast: CAST[0].name, style: STYLES[0].id, voice: "หญิง",
+    facts: FACTS.map((f) => f.id), shots: 0, scriptMode: "template",
     subtitle: true, bgm: false, tags: true, cart: true,
     accounts: [ACCOUNTS[0].handle],
     startDate: iso(new Date()),
@@ -1341,15 +1381,22 @@ table.vids tbody tr:hover { background: var(--surface-2); }
 
     const p = job.product;
     const target = job.format.target;
+    // งานที่คิวไว้พกรายการข้อมูลของตัวเองมา ส่วนหน้าตั้งค่าใช้ที่เลือกอยู่ตอนนี้
+    // ต้องตรงกับ _beats ใน src/script_gen.py ไม่งั้นพรีวิวจะหลอกตา
+    const use = (job.facts && job.facts.length ? job.facts : cfg.facts) || [];
+    const on = (fact) => use.includes(fact);
     const hook = HOOKS[job.seed % HOOKS.length].replace("{name}", p.name).replace("{price}", baht(p.price));
-    const cta = p.free ? CTA + " ส่งฟรีมีเก็บปลายทาง" : CTA;
+    const cta = (p.free && on("free")) ? CTA + " ส่งฟรีมีเก็บปลายทาง" : CTA;
 
     const optional = [];
-    if (p.bullets[0]) optional.push([2, p.bullets[0]]);
-    if (p.was) optional.push([1, `จากปกติ ${baht(p.was)} บาท ลดมาเกินครึ่ง`]);
-    if (p.bullets[1]) optional.push([3, p.bullets[1]]);
+    const bullets = on("bullets") ? p.bullets : [];
+    if (bullets[0]) optional.push([2, bullets[0]]);
+    if (p.was && on("discount")) optional.push([1, `จากปกติ ${baht(p.was)} บาท ลดมาเกินครึ่ง`]);
+    if (bullets[1]) optional.push([3, bullets[1]]);
+    if (p.sold && on("sold")) optional.push([5, `ขายไปแล้ว ${baht(p.sold)} ชิ้น คนซื้อซ้ำเยอะ`]);
+    if (p.shop && on("shop")) optional.push([6, `ส่งจากร้าน ${p.shop} ของแท้แน่นอน`]);
     optional.push([90, CLOSINGS[job.seed % CLOSINGS.length]]);
-    if (p.bullets[2]) optional.push([4, p.bullets[2]]);
+    if (bullets[2]) optional.push([4, bullets[2]]);
     if (job.format.id === "story") optional.push([0, STORY_OPENERS[job.seed % STORY_OPENERS.length]]);
     EXTRAS.forEach((text, i) => optional.push([50 + i, text]));
 
@@ -1458,6 +1505,10 @@ table.vids tbody tr:hover { background: var(--surface-2); }
       `<option value="${a.id}">${a.id} (${a.w}×${a.h}) — ${a.note}</option>`).join("");
     $("#f-cast").innerHTML = CAST.map((c) => `<option value="${c.name}">${c.name}</option>`).join("");
     fillStyles();
+    fillFacts();
+    fillShots();
+    $("#f-script").value = cfg.scriptMode;
+    showScriptHint();
 
     $("#sub-make").innerHTML = FORMATS.map((f) =>
       `<button class="sub-item" data-format="${f.id}">${f.name}<small>${f.sec} วิ</small></button>`).join("");
@@ -1486,6 +1537,52 @@ table.vids tbody tr:hover { background: var(--surface-2); }
   function showStyleHint() {
     const picked = STYLES.find((s) => s.id === cfg.style);
     $("#style-hint").textContent = picked ? picked.note : "";
+  }
+
+  /* เรียกซ้ำได้ด้วยเหตุผลเดียวกับ fillStyles — รายการจริงมาจากเซิร์ฟเวอร์ */
+  function fillFacts() {
+    const known = FACTS.map((f) => f.id);
+    cfg.facts = cfg.facts.filter((f) => known.includes(f));
+    $("#fact-opts").innerHTML = FACTS.map((f) =>
+      `<button class="chip" type="button" data-fact="${f.id}"
+               aria-pressed="${cfg.facts.includes(f.id)}">${f.name}</button>`).join("");
+    $$("#fact-opts [data-fact]").forEach((b) => b.addEventListener("click", () => {
+      const on = b.getAttribute("aria-pressed") !== "true";
+      b.setAttribute("aria-pressed", String(on));
+      cfg.facts = $$('#fact-opts [aria-pressed="true"]').map((c) => c.dataset.fact);
+      syncConfig();
+    }));
+  }
+
+  function fillShots() {
+    const [lo, hi] = SHOT_RANGE;
+    const opts = ['<option value="0">ตามที่ตั้งไว้ที่ตัวสินค้า</option>'];
+    for (let n = lo; n <= hi; n++) opts.push(`<option value="${n}">${n} ช็อต</option>`);
+    $("#f-shots").innerHTML = opts.join("");
+    $("#f-shots").value = String(cfg.shots);
+    showShotsHint();
+  }
+
+  function showShotsHint() {
+    if (!cfg.shots) {
+      $("#shots-hint").textContent = "สินค้าแต่ละตัวใช้ค่าของตัวเอง";
+      return;
+    }
+    // ช็อตสั้นกว่า 2 วิ เรนเดอร์ออกมาแล้วตาตามไม่ทัน ระบบยืดให้เป็น 2 วิเสมอ
+    const each = cfg.format.sec / cfg.shots;
+    $("#shots-hint").textContent = each < 2
+      ? `ช็อตละ ${each.toFixed(1)} วิ — สั้นเกิน ระบบจะยืดเป็น 2 วิ คลิปจึงยาวกว่าเสียง`
+      : `ช็อตละ ${each.toFixed(1)} วิ`;
+  }
+
+  function showScriptHint() {
+    if (cfg.scriptMode !== "llm") {
+      $("#script-hint").textContent = "สุ่มจากชุดประโยคที่เขียนไว้ ไม่ใช้เน็ต";
+      return;
+    }
+    $("#script-hint").textContent = SERVER.live && SERVER.health && !SERVER.health.hasClaudeKey
+      ? "ยังไม่ได้ตั้ง ANTHROPIC_API_KEY — จะถอยไปใช้เทมเพลตให้เอง"
+      : "เสียค่า API ต่อคลิป · ถ้าเรียกไม่สำเร็จจะถอยไปใช้เทมเพลต";
   }
 
   function renderSlots() {
@@ -1584,6 +1681,9 @@ table.vids tbody tr:hover { background: var(--surface-2); }
           aspect: cfg.aspect.id,
           persona: cfg.cast,
           style: cfg.style,
+          facts: cfg.facts,
+          shots: cfg.shots || null,
+          script_mode: cfg.scriptMode,
           voice: cfg.voice === "ชาย" ? "male" : "female",
           per: cfg.per,
           cart: cfg.cart,
@@ -1824,6 +1924,14 @@ table.vids tbody tr:hover { background: var(--surface-2); }
   // mounted at /app, so the same path has to be rewritten.
   const demoAsset = (src) => (SERVER.hosted ? "/app/" + src.replace(/^\/+/, "") : src);
 
+  /* ค่าใกล้เคียงของเกรดสีแต่ละแนวในรูปแบบ CSS filter — ไม่ใช่ค่าเดียวกับที่
+     ffmpeg ใช้ แต่ทำให้พรีวิวบอกทิศทางสีได้ว่าอุ่นขึ้นหรือเข้มขึ้น */
+  const GRADE_CSS = {
+    influencer: "saturate(1.12) contrast(1.04) brightness(1.03) sepia(.06)",
+    warehouse: "saturate(.94) contrast(1.18) brightness(.98) hue-rotate(-4deg)",
+    conveyor: "saturate(1.06) contrast(1.06) brightness(1.02)",
+  };
+
   function previewCues(lines, total) {
     const chars = lines.reduce((n, l) => n + l.length, 0) || 1;
     let clock = 0;
@@ -1853,20 +1961,28 @@ table.vids tbody tr:hover { background: var(--surface-2); }
     const cues = voiced
       ? voiced.cues.map((c) => ({ text: c.text, start: c.t, end: c.e }))
       : previewCues(lines, total);
-    const shots = Math.max(3, product.shots);
+    // จำนวนช็อตที่เลือกไว้ในหน้าตั้งค่าชนะค่าของตัวสินค้า เพราะนั่นคือสิ่งที่
+    // จะถูกส่งไปเรนเดอร์จริง
+    const shots = Math.max(3, opts.shots || cfg.shots || product.shots);
+    // รูปจริงมีอยู่แล้วบนเซิร์ฟเวอร์ ใช้มันแทนบล็อกสี พรีวิวจะได้ใกล้ของจริง
+    // รูปน้อยกว่าช็อตก็วนซ้ำ แบบเดียวกับที่ images.prepare ทำตอนเรนเดอร์
+    const photoCount = Math.max(1, product.shots || 1);
+    // คลิปจริงมีเกรดสีเบิร์นมาในไฟล์แล้ว ทาซ้ำจะเพี้ยนเป็นสองเท่า
+    const grade = clip ? "" : (GRADE_CSS[opts.style || cfg.style] || "");
 
     clearInterval(timers.get(host));
     host.innerHTML = `
       <div class="pv">
-        <div class="pv-frame" style="aspect-ratio:${aspect.w} / ${aspect.h}">
+        <div class="pv-frame" style="aspect-ratio:${aspect.w} / ${aspect.h}${grade ? `;filter:${grade}` : ""}">
           <span class="pv-mock">${clip ? "คลิปจริง" : "ตัวอย่างจำลอง"}</span>
           <span class="pv-ratio">${clip ? `${clip.w}×${clip.h}` : `${aspect.w}×${aspect.h}`}</span>
           ${clip ? `<video class="pv-video" data-video preload="metadata" playsinline src="${opts.clip ? clip.src : demoAsset(clip.src)}"></video>` : `
           ${Array.from({ length: shots }, (_, i) => `
             <div class="pv-shot${i === 0 ? " on" : ""}" data-shot="${i}"
                  style="background:${tint(product.hue + i * 9, 44)}">
-              <div class="pv-card"></div>
-              <i>${product.name.slice(0, 2)} ${i + 1}/${shots}</i>
+              ${product.hasPhotos
+                ? photo(product, (i % photoCount) + 1)
+                : `<div class="pv-card"></div><i>${product.name.slice(0, 2)} ${i + 1}/${shots}</i>`}
             </div>`).join("")}
           <div class="pv-top">
             <div class="pv-price">เหลือ ฿${baht(product.price)} (ปกติ ฿${baht(product.was)})</div>
@@ -2069,8 +2185,10 @@ table.vids tbody tr:hover { background: var(--surface-2); }
 
     document.body.appendChild(scrim);
     const host = scrim.querySelector("#drawer-preview");
+    // งานที่คิวไว้พกแนวและจำนวนช็อตของตัวเองมา ไม่ใช่ค่าที่ตั้งอยู่ในหน้าตั้งค่าตอนนี้
     mountPreview(host, {
       product: job.product, format: job.format, aspect: job.aspect, seed: job.seed, lines,
+      style: job.style && job.style.id, shots: job.shots,
     });
     // the real mp4 sits behind the API's auth header, which <video src> cannot
     // send — fetch it once and hand the player a blob instead
@@ -2084,6 +2202,7 @@ table.vids tbody tr:hover { background: var(--surface-2); }
           const url = URL.createObjectURL(blob);
           mountPreview(host, {
             product: job.product, format: job.format, aspect: job.aspect, seed: job.seed, lines,
+            style: job.style && job.style.id, shots: job.shots,
             clip: { src: url, w: job.aspect.w, h: job.aspect.h, sizeKB: job.sizeKB },
             duration: job.duration,
           });
@@ -2283,7 +2402,9 @@ table.vids tbody tr:hover { background: var(--surface-2); }
   $("#f-format").addEventListener("change", (e) => { cfg.format = FORMATS.find((f) => f.id === e.target.value); syncConfig(); });
   $("#f-aspect").addEventListener("change", (e) => { cfg.aspect = ASPECTS.find((a) => a.id === e.target.value); syncConfig(); });
   $("#f-cast").addEventListener("change", (e) => { cfg.cast = e.target.value; });
-  $("#f-style").addEventListener("change", (e) => { cfg.style = e.target.value; showStyleHint(); });
+  $("#f-style").addEventListener("change", (e) => { cfg.style = e.target.value; showStyleHint(); syncConfig(); });
+  $("#f-shots").addEventListener("change", (e) => { cfg.shots = Number(e.target.value); showShotsHint(); syncConfig(); });
+  $("#f-script").addEventListener("change", (e) => { cfg.scriptMode = e.target.value; showScriptHint(); });
   $("#f-voice").addEventListener("change", (e) => { cfg.voice = e.target.value; });
   $("#f-date").addEventListener("change", (e) => { cfg.startDate = e.target.value || iso(new Date()); });
 
@@ -2457,11 +2578,20 @@ table.vids tbody tr:hover { background: var(--surface-2); }
       return;
     }
 
-    // แนวคลิปที่เซิร์ฟเวอร์รู้จักจริง ชนะชุดตัวอย่างที่ฝังมาในหน้า
+    // ตัวเลือกที่เซิร์ฟเวอร์รู้จักจริง ชนะชุดตัวอย่างที่ฝังมาในหน้า
     if (Array.isArray(SERVER.health.styles) && SERVER.health.styles.length) {
       STYLES = SERVER.health.styles;
       fillStyles();
     }
+    if (Array.isArray(SERVER.health.facts) && SERVER.health.facts.length) {
+      FACTS = SERVER.health.facts;
+      fillFacts();
+    }
+    if (Array.isArray(SERVER.health.shotRange)) {
+      SHOT_RANGE = SERVER.health.shotRange;
+      fillShots();
+    }
+    showScriptHint();
 
     setMode(true, `ffmpeg: ${SERVER.health.ffmpeg ? "พร้อม" : "ไม่พบ"}`
       + (SERVER.health.fake_render ? " · โหมดเรนเดอร์จำลอง" : ""));

@@ -54,6 +54,13 @@ def section(title: str) -> None:
     print(f"\n{title}")
 
 
+def row_id(res) -> str:
+    """รหัสงานแรกของ batch ที่เพิ่งสร้าง"""
+    return db.connect().execute(
+        "SELECT id FROM jobs WHERE batch_id = ? ORDER BY rowid LIMIT 1",
+        (res.json()["batch_id"],)).fetchone()["id"]
+
+
 def queue_body(**over) -> dict:
     body = {
         "product_ids": ["P-1042"],
@@ -121,6 +128,11 @@ def main() -> int:
                                                  start_date=(date.today() + timedelta(days=90)).isoformat())),
             ("วันที่รูปแบบผิด", queue_body(account_ids=[a1], start_date="31/12/2026")),
             ("persona ว่าง", queue_body(account_ids=[a1], persona="")),
+            ("แนวคลิปไม่รู้จัก", queue_body(account_ids=[a1], style="ไม่มีแนวนี้")),
+            ("ข้อมูลที่พูดถึงไม่รู้จัก", queue_body(account_ids=[a1], facts=["ราคาลับ"])),
+            ("โหมดเขียนสคริปต์ไม่รู้จัก", queue_body(account_ids=[a1], script_mode="gpt")),
+            ("ช็อตน้อยกว่าขั้นต่ำ", queue_body(account_ids=[a1], shots=2)),
+            ("ช็อตเกินเพดาน", queue_body(account_ids=[a1], shots=99)),
             ("ฟิลด์แปลกปลอม", queue_body(account_ids=[a1], surprise="x")),
             ("สินค้ามากเกินเพดาน", queue_body(product_ids=[f"P-{i}" for i in range(60)], account_ids=[a1])),
             ("ขอเกิน 200 คลิป", queue_body(product_ids=[f"P-{i}" for i in range(30)],
@@ -344,6 +356,43 @@ def main() -> int:
               c.get(f"/api/jobs/{evil_id}/video", headers=auth_a).status_code, 404)
 
         # ----------------------------------------------------------- events
+        section("10.5 ตัวเลือกข้อมูลที่เอาไปทำคลิป")
+        body = queue_body(account_ids=[a1], style="warehouse", shots=7,
+                          script_mode="llm", facts=["discount", "sold"])
+        res = c.post("/api/queue", json=body, headers=auth_a)
+        check("คิวพร้อมตัวเลือกครบ → 201", res.status_code, 201)
+        row = db.connect().execute(
+            "SELECT style, facts, shot_count, script_mode FROM jobs WHERE batch_id = ?",
+            (res.json()["batch_id"],)).fetchone()
+        check("เก็บแนวลงฐานข้อมูล", row["style"], "warehouse")
+        check("เก็บข้อมูลที่เลือก เรียงแล้ว", row["facts"], "discount,sold")
+        check("เก็บจำนวนช็อต", row["shot_count"], 7)
+        check("เก็บโหมดเขียนสคริปต์", row["script_mode"], "llm")
+
+        view = next(j for j in c.get("/api/state", headers=auth_a).json()["jobs"]
+                    if j["id"] == row_id(res))
+        check("ส่งแนวกลับให้หน้าเว็บ", view["style"]["id"], "warehouse")
+        check("ส่งจำนวนช็อตกลับ", view["shots"], 7)
+        check("ส่งข้อมูลที่เลือกกลับ", view["facts"], ["discount", "sold"])
+
+        # ไม่ส่งตัวเลือกมาเลย = พฤติกรรมเดิมทุกอย่าง ของเก่าต้องไม่พัง
+        plain = c.post("/api/queue", json=queue_body(account_ids=[a1]), headers=auth_a)
+        base = db.connect().execute(
+            "SELECT style, facts, shot_count, script_mode FROM jobs WHERE batch_id = ?",
+            (plain.json()["batch_id"],)).fetchone()
+        check("ไม่ส่งแนว → เรียบ", base["style"], "clean")
+        check("ไม่ส่ง facts → ว่าง แปลว่าครบทุกชิ้น", base["facts"], "")
+        check("ไม่ส่งจำนวนช็อต → 0 แปลว่าใช้ค่าของสินค้า", base["shot_count"], 0)
+        check("ไม่ส่งโหมด → เทมเพลต", base["script_mode"], "template")
+        check("งานที่ไม่ได้ตั้งช็อต ยังรายงานค่าของสินค้า",
+              next(j for j in c.get("/api/state", headers=auth_a).json()["jobs"]
+                   if j["id"] == row_id(plain))["shots"] > 0, True)
+
+        check("health บอกรายการข้อมูลที่เลือกได้",
+              sorted(f["id"] for f in c.get("/api/health").json()["facts"]),
+              ["bullets", "discount", "free", "shop", "sold"])
+        check("health บอกช่วงจำนวนช็อต", c.get("/api/health").json()["shotRange"], [3, 18])
+
         section("11. Log")
         before = len(c.get("/api/state", headers=auth_a).json()["events"])
         check("มี log สะสมไว้", before > 0, True)

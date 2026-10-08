@@ -94,6 +94,22 @@ def main() -> int:
     check("ยังเหลือช็อตสินค้าอย่างน้อยหนึ่งช็อต", person_count < len(plan), True)
     check("ยังเปิดและปิดด้วยคน", plan[0] in many and plan[-1] in many, True)
 
+    print("\n6.5 จำนวนคนที่ได้จริง ต้องเท่าที่ขอ ไม่ตกหล่นเพราะตำแหน่งชนกัน")
+    pool = P(*[f"c{i}" for i in range(18)])
+    bad = None
+    for total in range(2, 19):
+        stock = P(*[f"p{i}" for i in range(total)])
+        for share in (0.2, 0.4, 0.55, 0.7, 0.8):
+            plan = persona.interleave(stock, pool, share=share)
+            want = min(len(pool), total - 1, max(1, round(total * share)))
+            got = sum(1 for x in plan if x in pool)
+            if got != want or len(plan) != total:
+                bad = {"ช็อต": total, "share": share, "ได้": got, "คาด": want}
+                break
+        if bad:
+            break
+    check("ทุกคู่ของจำนวนช็อตกับสัดส่วน ได้คนครบตามที่ขอ", bad, None)
+
     print("\n7. ช็อตเยอะขึ้น คนแทรกกลางด้วย")
     long_products = P(*[f"p{i}" for i in range(9)])
     plan = persona.interleave(long_products, many)

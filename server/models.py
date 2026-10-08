@@ -13,9 +13,12 @@ from datetime import date, timedelta
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from src.script_gen import ALL_FACTS
 from src.style import DEFAULT as DEFAULT_STYLE, STYLES
 
 FORMATS = {"quick": 16, "show": 24, "story": 42}
+SCRIPT_MODES = {"template", "llm"}
+MIN_SHOTS, MAX_SHOTS = 3, 18
 ASPECTS = {"9:16": (1080, 1920), "4:5": (1080, 1350), "1:1": (1080, 1080)}
 VOICES = {"female", "male"}
 
@@ -39,6 +42,11 @@ class QueueRequest(BaseModel):
     aspect: str
     persona: str = Field(min_length=1, max_length=60)
     style: str = DEFAULT_STYLE
+    # ข้อมูลสินค้าที่ยอมให้สคริปต์พูดถึง None = ครบทุกชิ้นเหมือนเดิม
+    facts: list[str] | None = None
+    # จำนวนช็อต None = ใช้ค่าที่ตั้งไว้ที่ตัวสินค้า
+    shots: int | None = Field(default=None, ge=MIN_SHOTS, le=MAX_SHOTS)
+    script_mode: str = "template"
     voice: str = "female"
     per: int = Field(default=1, ge=1, le=MAX_PER)
     cart: bool = True
@@ -88,6 +96,24 @@ class QueueRequest(BaseModel):
     def _known_style(cls, value: str) -> str:
         if value not in STYLES:
             raise ValueError(f"แนวคลิปต้องเป็นอย่างใดอย่างหนึ่งใน {sorted(STYLES)}")
+        return value
+
+    @field_validator("facts")
+    @classmethod
+    def _known_facts(cls, value: list[str] | None) -> list[str] | None:
+        if value is None:
+            return None
+        cleaned = sorted({v.strip() for v in value if v and v.strip()})
+        unknown = [v for v in cleaned if v not in ALL_FACTS]
+        if unknown:
+            raise ValueError(f"ไม่รู้จักข้อมูล {unknown} — เลือกได้จาก {sorted(ALL_FACTS)}")
+        return cleaned
+
+    @field_validator("script_mode")
+    @classmethod
+    def _known_script_mode(cls, value: str) -> str:
+        if value not in SCRIPT_MODES:
+            raise ValueError(f"โหมดเขียนสคริปต์ต้องเป็น {sorted(SCRIPT_MODES)}")
         return value
 
     @field_validator("voice")

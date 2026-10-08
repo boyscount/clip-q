@@ -73,6 +73,9 @@ CREATE TABLE IF NOT EXISTS jobs (
   aspect        TEXT NOT NULL,
   persona       TEXT NOT NULL,
   style         TEXT NOT NULL DEFAULT 'clean',
+  facts         TEXT NOT NULL DEFAULT '',
+  shot_count    INTEGER NOT NULL DEFAULT 0,
+  script_mode   TEXT NOT NULL DEFAULT 'template',
   voice         TEXT NOT NULL,
   cart          INTEGER NOT NULL DEFAULT 1,
   status        TEXT NOT NULL DEFAULT 'queued',
@@ -187,6 +190,11 @@ def tx():
 MIGRATIONS: list[tuple[str, str, str]] = [
     ("jobs", "sub_id", "TEXT NOT NULL DEFAULT ''"),
     ("jobs", "style", "TEXT NOT NULL DEFAULT 'clean'"),
+    # '' = ใช้ข้อมูลครบทุกชิ้นเหมือนก่อนมีตัวเลือกนี้
+    ("jobs", "facts", "TEXT NOT NULL DEFAULT ''"),
+    # 0 = ใช้จำนวนช็อตที่ตั้งไว้ที่ตัวสินค้า
+    ("jobs", "shot_count", "INTEGER NOT NULL DEFAULT 0"),
+    ("jobs", "script_mode", "TEXT NOT NULL DEFAULT 'template'"),
 ]
 
 
@@ -380,9 +388,11 @@ def product(user_id: str, product_id: str) -> dict | None:
 def insert_jobs(rows: list[dict]) -> None:
     connect().executemany(
         "INSERT INTO jobs (id,user_id,batch_id,product_id,account_id,sub_id,format,aspect,"
-        "persona,style,voice,cart,status,progress,scheduled_at,created_at,link) "
+        "persona,style,facts,shot_count,script_mode,voice,cart,status,progress,"
+        "scheduled_at,created_at,link) "
         "VALUES (:id,:user_id,:batch_id,:product_id,:account_id,:sub_id,:format,:aspect,"
-        ":persona,:style,:voice,:cart,'queued',0,:scheduled_at,:created_at,:link)",
+        ":persona,:style,:facts,:shot_count,:script_mode,:voice,:cart,'queued',0,"
+        ":scheduled_at,:created_at,:link)",
         rows,
     )
 
